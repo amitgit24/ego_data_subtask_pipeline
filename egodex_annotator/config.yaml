@@ -1,0 +1,93 @@
+# EgoDex annotation pipeline configuration
+# Level 0 is the single source of truth for the data schema — the hdf5 section
+# below is written/confirmed by level0_audit/audit_dataset.py. Do not hardcode
+# key paths anywhere else.
+
+paths:
+  data_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/test
+  output_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/egodex_annotator/outputs
+  model_path: /mnt/3466ADC766AD8A66/research_paper/Robointer/models/Qwen3-VL-32B-Instruct
+
+# ---- confirmed by Level 0 audit (2026-07-10) ----
+hdf5:
+  transforms_group: transforms          # {joint} -> (N, 4, 4) float32 SE(3), world frame
+  confidences_group: confidences        # {joint} -> (N,) float32 in [0, 1]
+  camera_intrinsic: camera/intrinsic    # (3, 3) float32
+  camera_pose: transforms/camera        # (N, 4, 4) per-frame camera extrinsics
+  wrist:
+    left: transforms/leftHand
+    right: transforms/rightHand
+  pinch_pair:
+    left: [transforms/leftThumbTip, transforms/leftIndexFingerTip]
+    right: [transforms/rightThumbTip, transforms/rightIndexFingerTip]
+  # language annotation lives in root attrs; resolution order:
+  #   1. attrs['llm_description2'] if attrs['which_llm_description'] == '2'
+  #   2. attrs['llm_description'] (newer episodes)
+  #   3. attrs['description']     (older annotator versions)
+  task_attr: task
+  description_attr: llm_description
+  description2_attr: llm_description2
+  which_description_attr: which_llm_description
+  fallback_description_attr: description
+  # confidences/<joint> present on most but NOT all episodes; where absent,
+  # validity falls back to a NaN check on the transforms (audited: 0 NaNs).
+  confidence_valid_min: 0.5             # per-joint frame considered valid above this
+
+video:
+  fps: 30.0                             # confirmed by audit (metadata + pose count)
+  extension: .mp4
+
+audit:
+  n_episodes: 8                         # sampled across distinct tasks
+  n_signal_episodes: 3                  # wrist-trajectory plots
+  max_invalid_fraction: 0.05
+
+# ---- Level 1 kinematic boundary proposal ----
+kinematics:
+  max_gap_interp: 10        # frames; interpolate invalid gaps up to this length
+  savgol_window: 15         # frames
+  savgol_poly: 3
+  pause_prominence: 0.05    # m/s, find_peaks prominence on -speed_combined
+  pause_speed_max: 0.08     # m/s, minima must be below this
+  aperture_vel_thresh: 0.15 # m/s, |d(aperture)/dt| peak threshold
+  head_rot_percentile: 90   # per-episode percentile for gaze-shift threshold
+  head_rot_min_rad_s: 0.25  # absolute floor so near-static heads don't emit
+                            # spurious gaze boundaries from the percentile rule
+  merge_window: 15          # frames (0.5 s), merge nearby candidates
+  min_segment_frames: 30    # frames (1 s)
+  move_speed_min: 0.15      # m/s; adjacent boundaries with no movement burst
+                            # above this in between collapse into one (stops
+                            # near-static tasks like typing from fragmenting)
+
+# ---- Level 2 hand assignment (kinematic, never the VLM) ----
+hand_assignment:
+  dominance_ratio: 3.0      # one score > ratio x other -> single hand
+  active_speed_min: 0.04    # m/s mean wrist speed in segment: raw activity...
+  active_apv_min: 0.04      # m/s mean |aperture vel|: ...either counts as
+                            # active; median-normalized scores are only used
+                            # for dominance among active hands (an idle hand's
+                            # noise otherwise inflates its normalized score)
+  wrist_dist_tol: 0.15      # +-15% of segment-mean inter-wrist distance...
+  wrist_dist_frac: 0.70     # ...for >70% of frames -> both_coordinating
+  handover_window_s: 1.0    # grasp on one hand within 1 s of release on other
+
+# ---- Level 2 VLM labeling ----
+vlm:
+  backend: vllm_endpoint    # vllm_endpoint | transformers
+  endpoint_url: http://localhost:8000/v1
+  api_key: EMPTY
+  model_name: Qwen3-VL-32B-Instruct
+  temperature: 0.0
+  max_tokens: 300
+  concurrency: 8            # parallel requests; vLLM batches them internally
+  keyframes_per_segment: 5
+  keyframe_size: 768        # px, long side
+  style_variation: true
+  max_retries: 3
+  debug_first_n: 10
+
+# ---- Level 3 assembly ----
+assembly:
+  merge_gap_s: 0.5
+  idle_gap_s: 1.0
+  pipeline_version: "0.1.0"

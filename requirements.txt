@@ -1,0 +1,14 @@
+# EgoDex annotation pipeline — conda env: egodex (Python 3.11)
+# Install order matters: vllm first (pins torch/transformers), then the rest.
+# Verified 2026-07-10 on 2x RTX PRO 6000 Blackwell (sm_120), driver 580.126.09.
+vllm==0.24.0            # brings torch 2.11.0+cu130, transformers 5.13.0, openai 2.45.0
+h5py==3.16.0
+numpy==2.3.5
+scipy==1.17.1
+opencv-python==5.0.0.93
+matplotlib==3.11.0
+pydantic==2.13.4
+pyyaml==6.0.3
+qwen-vl-utils==0.0.14
+accelerate==1.14.0
+decord==0.6.0           # optional; opencv is the primary video decoder

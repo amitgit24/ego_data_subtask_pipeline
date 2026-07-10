@@ -1,0 +1,22 @@
+# dataset (19 GB) — never commit
+test/
+train/
+
+# pipeline outputs (keyframes, plots, videos, annotations)
+egodex_annotator/outputs/
+
+# model weights live outside the repo, but guard anyway
+*.safetensors
+*.hdf5
+*.mp4
+
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# editors / os
+.vscode/
+.idea/
+*.swp
+.DS_Store
