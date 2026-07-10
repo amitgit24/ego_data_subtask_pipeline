@@ -1,0 +1,275 @@
+# Kinematic task categories for EgoDex.
+#
+# Tasks are grouped by MOTION SIGNATURE — what the wrist/aperture/rotation
+# signals actually look like — so Level 1 interpretation and Level 2 prompt
+# hints can be category-aware. Tasks are listed explicitly (no globs): name
+# similarity does not imply kinematic similarity (insert_remove_drawer is a
+# slide, not an insertion). check_categories.py audits that every task in the
+# data maps to exactly one category; unmapped tasks fail loudly.
+#
+# Fields:
+#   description     what the family is
+#   kinematics      expected signal signature (drives interpretation + eval)
+#   expected_verbs  soft prior for the VLM prompt and Phase-1 eval — NEVER a
+#                   hard constraint on the taxonomy
+#   prompt_hint     one-liner injected into the Level 2 prompt
+#   direction_aware most tasks are reversible pairs; when true the hint names
+#                   the episode's direction from which_llm_description
+#   keyframes_bonus extra keyframes for long uniform segments
+
+pick_place:
+  description: Discrete object transport, including stacking and tabletop set-up/clean-up.
+  kinematics: >
+    Clear reach-grasp-transport-release cycles: speed peaks separated by
+    pauses, strong aperture grasp/release events, mostly one active hand.
+  expected_verbs: [reach, grasp, pick, lift, transfer, carry, place, put_down, release, stack, unstack, reposition]
+  prompt_hint: >
+    Typical sub-phases: reach for object, grasp, transport, place/stack at
+    target, retract. Repeated for each object moved.
+  direction_aware: false
+  keyframes_bonus: 0
+  tasks:
+    - arrange_topple_dominoes
+    - assemble_jenga
+    - basic_pick_place
+    - deal_gather_cards
+    - declutter_desk
+    - gather_roll_dice
+    - insert_dump_blocks
+    - measure_objects
+    - pick_place_food
+    - pick_up_and_put_down_case_or_bag
+    - play_mancala
+    - play_reset_connect_four
+    - put_away_set_up_board_game
+    - set_up_clean_up_chessboard
+    - setup_cleanup_table
+    - sort_beads
+    - stack
+    - stack_remove_jenga
+    - stack_unstack_bowls
+    - stack_unstack_cups
+    - stack_unstack_plates
+    - stack_unstack_tupperware
+    - stock_unstock_fridge
+    - throw_collect_objects
+    - vertical_pick_place
+
+precision_insertion:
+  description: Fitting one object into/onto another with fine alignment (and the reverse).
+  kinematics: >
+    Fast approach then distinct slow fine-alignment phase near the target
+    (low speed, small corrections), short push/pull at contact; removal is
+    the mirror image.
+  expected_verbs: [reach, grasp, align, insert, remove, push, pull, place, release, twist]
+  prompt_hint: >
+    Typical sub-phases: reach and grasp part, transport to target, slow
+    align, seat/insert (or loosen/extract), place aside, retract.
+  direction_aware: true
+  keyframes_bonus: 0
+  tasks:
+    - charge_uncharge_airpods
+    - charge_uncharge_device
+    - clip_unclip_papers
+    - insert_remove_airpods
+    - insert_remove_bagging
+    - insert_remove_bookshelf
+    - insert_remove_cups_from_rack
+    - insert_remove_furniture_bench_cabinet
+    - insert_remove_furniture_bench_round_table
+    - insert_remove_plug_socket
+    - insert_remove_shirt_in_tube
+    - insert_remove_tennis_ball
+    - insert_remove_usb
+    - insert_remove_utensils
+    - peel_place_sticker
+    - put_in_take_out_glasses
+    - sleeve_unsleeve_cards
+    - slot_batteries
+
+rotation_twist:
+  description: Tasks dominated by wrist rotation about a fixed axis.
+  kinematics: >
+    High wrist angular velocity with low wrist translation; often repeated
+    twist cycles (regrasps between turns show as aperture events with
+    near-zero displacement).
+  expected_verbs: [grasp, twist, rotate, insert, remove, adjust_grip, release, align]
+  prompt_hint: >
+    Rotation is the action here: twisting/screwing loosens or tightens the
+    part. Repeated small regrasps between turns are part of one twist
+    subtask, not separate actions.
+  direction_aware: true
+  keyframes_bonus: 0
+  tasks:
+    - lock_unlock_key
+    - screw_unscrew_allen_fixture
+    - screw_unscrew_bottle_cap
+    - screw_unscrew_fingers_fixture
+    - use_rubiks_cube
+
+assembly_multi_part:
+  description: Multi-part construction/deconstruction (furniture bench, legos, tiles).
+  kinematics: >
+    Long multi-phase episodes chaining pick-place + insertion + rotation;
+    frequently bimanual with one hand stabilizing (static wrist + closed
+    aperture) while the other works.
+  expected_verbs: [reach, grasp, align, insert, assemble, disassemble, rotate, twist, hold_steady, place, remove]
+  prompt_hint: >
+    Multi-part assembly: expect align-insert-secure cycles per part, often
+    with one hand holding the structure steady while the other attaches or
+    detaches a part.
+  direction_aware: true
+  keyframes_bonus: 1
+  tasks:
+    - assemble_disassemble_furniture_bench_chair
+    - assemble_disassemble_furniture_bench_desk
+    - assemble_disassemble_furniture_bench_drawer
+    - assemble_disassemble_furniture_bench_lamp
+    - assemble_disassemble_furniture_bench_square_table
+    - assemble_disassemble_furniture_bench_stool
+    - assemble_disassemble_legos
+    - assemble_disassemble_soft_legos
+    - assemble_disassemble_structures
+    - assemble_disassemble_tiles
+    - build_unstack_lego
+
+cyclic_surface:
+  description: Repetitive tool-on-surface strokes (wiping, washing, sweeping, brushing).
+  kinematics: >
+    Oscillatory wrist speed (periodic strokes) with few or no aperture events
+    after the tool is acquired; stroke reversals create shallow speed dips
+    that are NOT subtask boundaries.
+  expected_verbs: [pick, grasp, wipe, squeeze, place, put_down, release, reposition]
+  prompt_hint: >
+    Motion is repetitive wiping/scrubbing strokes; all strokes over one area
+    are ONE wipe subtask. Boundaries here usually mean acquiring/releasing
+    the tool or moving to a new area, not individual strokes.
+  direction_aware: false
+  keyframes_bonus: 2
+  tasks:
+    - clean_cups
+    - clean_surface
+    - clean_tableware
+    - dry_hands
+    - paint_clean_brush
+    - rake_smooth_zen_garden
+    - sweep_dustpan
+    - wash_fruit
+    - wash_kitchen_dishes
+    - wash_put_away_dishes
+    - wipe_kitchen_surfaces
+    - wipe_screen
+
+fine_motor_tool:
+  description: Sustained fine finger work with a near-static wrist (writing, typing, chopsticks).
+  kinematics: >
+    Wrist speed stays low the whole time; activity lives in finger joints and
+    small aperture changes. Pause detection is unreliable — segments come
+    from the movement-burst rule and grasp events.
+  expected_verbs: [pick, grasp, write, press, hold, squeeze, place, release, adjust_grip]
+  prompt_hint: >
+    Fine motor work: the hand stays in place while fingers act (writing,
+    typing, pressing, manipulating a small tool). Sustained fine activity is
+    one subtask; do not invent transport that did not happen.
+  direction_aware: false
+  keyframes_bonus: 2
+  tasks:
+    - color
+    - flip_pages
+    - play_piano
+    - point_and_click_remote
+    - put_toothpaste_on_toothbrush
+    - staple_paper
+    - type_keyboard
+    - use_chopsticks
+    - write
+
+deformable_bimanual:
+  description: Cloth, paper, rope, and dough manipulation (folding, tying, wrapping, kneading).
+  kinematics: >
+    Both hands active and coordinated; rich simultaneous aperture activity;
+    object state changes without large transport. Inter-wrist distance
+    varies with the material, unlike rigid joint carries.
+  expected_verbs: [grasp, fold, unfold, tie, untie, wrap, unwrap, tear, squeeze, flip, hold_steady, align, release]
+  prompt_hint: >
+    Deformable material: both hands typically pinch and reshape it in place
+    (fold, tie, wrap, knead). Describe the state change of the material, not
+    object transport.
+  direction_aware: true
+  keyframes_bonus: 1
+  tasks:
+    - basic_fold
+    - braid_unbraid
+    - crumple_flatten_paper
+    - fold_stack_unstack_unfold_cloths
+    - fold_unfold_paper_basic
+    - fold_unfold_paper_origami
+    - knead_slime
+    - thread_unthread_bead_necklace
+    - tie_and_untie_shoelace
+    - tie_untie_rubberband
+    - wrap
+    - wrap_unwrap_food
+    - zip_unzip_bag
+    - zip_unzip_case
+
+container_kitchen:
+  description: Kitchen tasks with pouring, scooping, and multi-step food handling.
+  kinematics: >
+    Container tilt shows as wrist rotation while carrying (rotation +
+    translation together); multi-step episodes chain transports with
+    in-place actions at the stove/plate.
+  expected_verbs: [pick, grasp, carry, pour, flip, place, put_down, insert, remove, transfer, hold_steady, assemble]
+  prompt_hint: >
+    Kitchen sequence: expect transport of containers/food plus in-place
+    actions (pour, scoop, flip, serve). Tilting a held container means
+    pouring or dispensing, not repositioning.
+  direction_aware: false
+  keyframes_bonus: 1
+  tasks:
+    - boil_serve_egg
+    - fry_bread
+    - fry_egg
+    - load_dispense_ice
+    - make_sandwich
+    - pour
+    - scoop_dump_ice
+
+open_close_articulated:
+  description: Hinged or sliding mechanisms - lids, boxes, cases, drawers.
+  kinematics: >
+    Short arc or linear strokes against a constrained mechanism (hinge or
+    rail): brief push/pull with the object mostly stationary; often paired
+    with an inner insert/remove step.
+  expected_verbs: [reach, grasp, open, close, push, pull, slide, insert, remove, place, release]
+  prompt_hint: >
+    Articulated mechanism: opening/closing is a short constrained motion
+    (hinge or slide). Distinguish operating the container from inserting or
+    removing its contents.
+  direction_aware: true
+  keyframes_bonus: 0
+  tasks:
+    - add_remove_lid
+    - insert_remove_drawer
+    - open_close_insert_remove_box
+    - open_close_insert_remove_case
+    - open_close_insert_remove_tupperware
+
+dynamic_play:
+  description: Ballistic or fidget motions - throwing, rolling, flipping, popping.
+  kinematics: >
+    Short high-speed bursts (throw, flip) or fast oscillation (fidget,
+    push-pop); tracking may degrade at peak speeds; catches show as sudden
+    aperture closures.
+  expected_verbs: [pick, grasp, drop, shake, press, flip, push, release, hold, transfer]
+  prompt_hint: >
+    Dynamic play motion: expect quick throws, rolls, flips, or repeated
+    fidget presses. Fast repeated toy actuation is one subtask.
+  direction_aware: false
+  keyframes_bonus: 1
+  tasks:
+    - fidget_magnetic_spinner_rings
+    - flip_coin
+    - push_pop_toy
+    - roll_ball
+    - throw_and_catch_ball

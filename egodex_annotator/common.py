@@ -74,6 +74,29 @@ def resolve_description(attrs, cfg):
     raise KeyError(f"no language annotation found in attrs: {sorted(attrs)}")
 
 
+def load_task_categories(path=None):
+    """task_categories.yaml -> (categories dict, task -> category name map).
+
+    Fails loudly on a task listed in two categories."""
+    with open(path or CONFIG_PATH.parent / "task_categories.yaml") as f:
+        categories = yaml.safe_load(f)
+    task_map = {}
+    for name, cat in categories.items():
+        for task in cat["tasks"]:
+            if task in task_map:
+                raise ValueError(f"task {task!r} in both {task_map[task]!r} "
+                                 f"and {name!r}")
+            task_map[task] = name
+    return categories, task_map
+
+
+def category_for_task(task_name, categories, task_map):
+    """Category dict for a task folder name, or None if unmapped (callers
+    decide whether unmapped is an error)."""
+    name = task_map.get(task_name)
+    return dict(categories[name], name=name) if name else None
+
+
 def joint_validity(f, joint_key, conf_min):
     """Per-frame validity for a transforms/<joint> dataset.
 
