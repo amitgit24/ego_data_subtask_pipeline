@@ -26,8 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "level1_kinematics"
 import h5py  # noqa: E402
 
 from boundaries import propose_boundaries  # noqa: E402
-from common import (episode_slug, load_config, resolve_description,  # noqa: E402
-                    sample_episodes)
+from common import (category_for_task, episode_slug, load_config,  # noqa: E402
+                    load_task_categories, resolve_description, sample_episodes)
 from hand_assignment import assign_hand, kinematic_summary  # noqa: E402
 from keyframes import extract_keyframes, select_keyframes  # noqa: E402
 from taxonomy import (ACTION_GROUPS, RESPONSE_SCHEMA, STYLE_RULES,  # noqa: E402
@@ -51,9 +51,19 @@ def taxonomy_block():
     return "\n".join(lines)
 
 
+def category_block(category):
+    """Category prior for the prompt — a hint, never a constraint."""
+    if not category:
+        return ""
+    return (f"Task family: {category['name']} — {category['prompt_hint'].strip()} "
+            f"Verbs commonly seen in this family: "
+            f"{', '.join(category['expected_verbs'])} — a prior, not a rule; "
+            f"label only what the frames show.\n")
+
+
 def build_prompt(segment, task_desc, kin_summary, hand, style_id, style,
                  keyframe_data, n_segments, episode_dur, style_variation,
-                 prev_context=""):
+                 prev_context="", category=None):
     """Returns OpenAI-format message content list (text + images interleaved)."""
     content = [{"type": "text", "text":
         "You label one segment of an egocentric human manipulation episode "
@@ -74,7 +84,7 @@ def build_prompt(segment, task_desc, kin_summary, hand, style_id, style,
 Overall task (context for the WHOLE episode): {task_desc}
 This is segment {segment['id'] + 1} of {n_segments}, t={segment['start_time']:.1f}s to {segment['end_time']:.1f}s of a {episode_dur:.1f}s episode.
 Kinematic context (computed from 3D hand tracking, trust it for motion facts): {kin_summary}
-{prev_context}
+{category_block(category)}{prev_context}
 IMPORTANT: the overall task describes the whole episode, but this segment may
 be only one phase of it — approaching, aligning, transporting, placing,
 retracting, holding, or idling. Do NOT copy the task verb unless the frames
@@ -205,6 +215,12 @@ def process_episode(h5_path, cfg, backend, debug_budget):
     with h5py.File(h5_path, "r") as f:
         task_desc = resolve_description(dict(f.attrs), cfg)
 
+    categories, task_map = load_task_categories()
+    category = category_for_task(h5_path.parent.name, categories, task_map)
+    n_keyframes = min(v["keyframes_per_segment"]
+                      + (category["keyframes_bonus"] if category else 0),
+                      6)  # server is launched with --limit-mm-per-prompt image=6
+
     fps = result["fps"]
     episode_dur = (result["n_frames"] - 1) / fps
     segments = result["segments"]
@@ -218,7 +234,7 @@ def process_episode(h5_path, cfg, backend, debug_budget):
     for segment in segments:
         hand_info = assign_hand(sig, segment, cfg)
         kin = kinematic_summary(sig, segment, hand_info, fps)
-        frames = select_keyframes(segment, v["keyframes_per_segment"])
+        frames = select_keyframes(segment, n_keyframes)
         kf = extract_keyframes(h5_path.with_suffix(".mp4"), frames,
                                v["keyframe_size"],
                                out_root / "keyframes" / slug, segment["id"])
@@ -234,7 +250,8 @@ def process_episode(h5_path, cfg, backend, debug_budget):
                             + "\n".join(lines) + "\n")
         content = build_prompt(segment, task_desc, kin, hand_info["hand"],
                                style_id, style, kf_data, len(segments),
-                               episode_dur, style_variation, prev_context)
+                               episode_dur, style_variation, prev_context,
+                               category)
         label, raw, attempts = label_one(backend, content, v["max_retries"])
         enriched = dict(segment)
         enriched.update({

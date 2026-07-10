@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from common import episode_slug, load_config
+from common import episode_slug, load_config, load_task_categories
 
 ROOT = Path(__file__).resolve().parent
 PY = sys.executable
@@ -68,6 +68,40 @@ def pick_random(cfg, n, seed):
     return [f"{p.parent.name}/{p.stem}" for p in picked]
 
 
+def pick_category(cfg, category_name, n, seed):
+    """N unlabeled episodes from one kinematic category, round-robin across
+    its tasks so no single task dominates the sample."""
+    categories, _ = load_task_categories()
+    if category_name not in categories:
+        raise SystemExit(f"unknown category {category_name!r}; "
+                         f"choose from {sorted(categories)}")
+    data_dir = Path(cfg["paths"]["data_dir"])
+    labels_dir = Path(cfg["paths"]["output_dir"]) / "labels"
+    rng = random.Random(seed)
+
+    per_task = {}
+    for task in categories[category_name]["tasks"]:
+        eps = [p for p in sorted((data_dir / task).glob("*.hdf5"),
+                                 key=lambda p: int(p.stem))
+               if not (labels_dir / f"{episode_slug(p)}.json").exists()]
+        rng.shuffle(eps)
+        if eps:
+            per_task[task] = eps
+
+    picked = []
+    while len(picked) < n and per_task:
+        for task in sorted(per_task):
+            if len(picked) == n:
+                break
+            picked.append(per_task[task].pop())
+            if not per_task[task]:
+                del per_task[task]
+    if len(picked) < n:
+        print(f"note: only {len(picked)} unlabeled episodes in "
+              f"{category_name}, using all of them")
+    return [f"{p.parent.name}/{p.stem}" for p in picked]
+
+
 def check_vlm_endpoint(cfg):
     import urllib.request
     url = cfg["vlm"]["endpoint_url"].rstrip("/") + "/models"
@@ -90,6 +124,11 @@ def main():
     ap.add_argument("--episodes", nargs="+", required=False,
                     default=["all"],
                     help="'all', 'N_random', or explicit task/idx ids")
+    ap.add_argument("--category", default=None,
+                    help="kinematic category from task_categories.yaml; "
+                         "use with --n")
+    ap.add_argument("--n", type=int, default=None,
+                    help="number of episodes to draw from --category")
     ap.add_argument("--levels", default="1,2,3")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--force", action="store_true")
@@ -109,7 +148,9 @@ def main():
 
     # resolve episode list
     spec = args.episodes
-    if spec == ["all"]:
+    if args.category:
+        episodes = pick_category(cfg, args.category, args.n or 200, args.seed)
+    elif spec == ["all"]:
         data_dir = Path(cfg["paths"]["data_dir"])
         episodes = [f"{p.parent.name}/{p.stem}"
                     for p in sorted(data_dir.glob("*/*.hdf5"))]
