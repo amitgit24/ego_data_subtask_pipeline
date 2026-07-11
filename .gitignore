@@ -2,8 +2,8 @@
 test/
 train/
 
-# pipeline outputs (keyframes, plots, videos, annotations)
-egodex_annotator/outputs/
+# pipeline outputs (keyframes, plots, videos, annotations, review media)
+outputs/
 
 # model weights live outside the repo, but guard anyway
 *.safetensors
