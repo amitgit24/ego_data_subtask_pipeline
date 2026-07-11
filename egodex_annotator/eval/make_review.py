@@ -166,7 +166,7 @@ function renderProgress(){
   $('progress').textContent = ` reviewed ${done}/${DATA.length} episodes`;
 }
 function btn(cls, state, want, label, cb){
-  return `<button class="vbtn ${state===want?(want?'good':'bad'):''}" onclick='${cb}'>${label}</button>`;
+  return `<button class="vbtn ${state===want?(want?'good':'bad'):''}" onclick="${cb}">${label}</button>`;
 }
 function renderMain(){
   const ep = DATA[cur];
