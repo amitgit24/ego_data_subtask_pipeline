@@ -58,47 +58,64 @@ def select_episodes(cfg, category, n, seed):
     return picked
 
 
-def transcode(src, dst):
-    if dst.exists():
+def transcode(src, dst, force=False):
+    if dst.exists() and not force:
         return
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src),
-         "-vf", "scale=640:-2", "-c:v", "libx264", "-crf", "26",
-         "-preset", "veryfast", "-an", "-movflags", "+faststart", str(dst)],
+         "-vf", "scale=1080:-2", "-c:v", "libx264", "-crf", "18",
+         "-preset", "slow", "-an", "-movflags", "+faststart", str(dst)],
         check=True)
 
 
 HTML = r"""<!doctype html><html><head><meta charset="utf-8">
 <title>EgoDex annotation review</title>
 <style>
- body{font-family:system-ui,sans-serif;margin:0;display:flex;height:100vh}
- #side{width:270px;overflow-y:auto;border-right:1px solid #ccc;padding:8px;flex-shrink:0}
- #side .ep{padding:5px 7px;border-radius:5px;cursor:pointer;font-size:13px;margin:2px 0}
- #side .ep:hover{background:#eef}
- #side .ep.active{background:#dde6ff;font-weight:600}
- #side .ep .st{float:right;font-size:11px}
- #main{flex:1;overflow-y:auto;padding:14px 22px}
- video{width:640px;max-width:100%;background:#000;border-radius:6px}
- #timeline{position:relative;width:640px;max-width:100%;height:34px;margin:6px 0 2px;
-   background:#f2f2f2;border-radius:5px;overflow:hidden;cursor:pointer}
- #timeline .blk{position:absolute;top:0;height:100%;border-right:2px solid #fff;
-   font-size:10px;color:#fff;overflow:hidden;padding:2px 3px;box-sizing:border-box}
- #timeline .cursor{position:absolute;top:0;width:2px;height:100%;background:red}
- #caption{width:640px;max-width:100%;min-height:38px;font-size:15px;padding:6px 2px}
- table{border-collapse:collapse;margin-top:8px;width:100%}
- td,th{border-bottom:1px solid #e3e3e3;padding:7px 8px;font-size:13px;text-align:left;vertical-align:top}
- tr.active{background:#f4f7ff}
- .vbtn{border:1px solid #bbb;background:#fff;border-radius:4px;padding:2px 9px;cursor:pointer;margin:0 2px;font-size:13px}
+ :root{--vw:960px;--bg:#15171c;--bg2:#1c1f26;--bg3:#242832;--fg:#e8e9ec;--fg2:#b7bac2;--fg3:#848993;--line:#333744;--accent:#6ea8ff}
+ *{box-sizing:border-box}
+ body{font-family:system-ui,sans-serif;margin:0;display:flex;height:100vh;font-size:16px;background:var(--bg);color:var(--fg)}
+ #side{width:280px;overflow-y:auto;border-right:1px solid var(--line);padding:8px;flex-shrink:0;background:var(--bg2)}
+ #side h3{color:var(--fg)}
+ #side .ep{padding:6px 8px;border-radius:5px;cursor:pointer;font-size:13px;margin:2px 0;color:var(--fg2)}
+ #side .ep:hover{background:var(--bg3)}
+ #side .ep.active{background:#2b3a5c;font-weight:600;color:var(--fg)}
+ #side .ep .st{float:right;font-size:12px}
+ #main{flex:1;overflow-y:auto;padding:16px 26px}
+ video{width:var(--vw);max-width:100%;background:#000;border-radius:8px;border:1px solid var(--line)}
+ #timeline{position:relative;width:var(--vw);max-width:100%;height:40px;margin:8px 0 4px;
+   background:var(--bg3);border-radius:5px;overflow:hidden;cursor:pointer}
+ #timeline .blk{position:absolute;top:0;height:100%;border-right:2px solid var(--bg);
+   font-size:11px;color:#fff;overflow:hidden;padding:3px 4px;box-sizing:border-box}
+ #timeline .cursor{position:absolute;top:0;width:2px;height:100%;background:#ff5555}
+ #caption{width:var(--vw);max-width:100%;min-height:30px;font-size:17px;padding:8px 2px;color:var(--fg2)}
+ #title{font-size:22px;color:var(--fg)}
+ #task{font-size:19px;font-weight:700;margin:2px 0 10px;color:var(--fg)}
+ .vbtn{border:1px solid #555b6b;background:var(--bg3);color:var(--fg2);border-radius:5px;padding:5px 14px;cursor:pointer;margin:0 3px;font-size:14px}
  .vbtn.good{background:#2e9e44;color:#fff;border-color:#2e9e44}
  .vbtn.bad{background:#d33;color:#fff;border-color:#d33}
- .play{cursor:pointer;color:#25c;font-weight:600;white-space:nowrap}
- .flag{color:#c60;font-size:11px}
- #epverdict{margin:10px 0;padding:10px;background:#f8f8f8;border-radius:6px;width:640px;max-width:100%;box-sizing:border-box}
- input[type=text]{width:220px;font-size:12px}
- #topbar{position:sticky;top:0;background:#fff;padding:6px 0;z-index:5;border-bottom:1px solid #eee}
- button.big{padding:6px 14px;font-size:14px;border-radius:6px;border:1px solid #888;cursor:pointer}
- .done{color:#2e9e44}.part{color:#c90}
- .hint{color:#888;font-size:12px}
+ .play{cursor:pointer;color:var(--accent);font-weight:700;white-space:nowrap;font-size:16px}
+ .flag{color:#e0a030;font-size:13px;font-weight:600}
+ #epverdict{margin:12px 0;padding:14px 16px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;width:var(--vw);max-width:100%;box-sizing:border-box;font-size:16px}
+ input[type=text]{font-size:14px;padding:4px 7px;background:var(--bg3);color:var(--fg);border:1px solid var(--line);border-radius:4px}
+ #topbar{position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:5;border-bottom:1px solid var(--line)}
+ button.big{padding:7px 16px;font-size:15px;border-radius:6px;border:1px solid #555b6b;background:var(--bg3);color:var(--fg);cursor:pointer}
+ button.big:hover{background:#2b3a5c}
+ .done{color:#4cc26a}.part{color:#e0a030}
+ .hint{color:var(--fg3);font-size:13px}
+ #seglist{width:var(--vw);max-width:100%}
+ .segcard{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:16px 0;background:var(--bg2)}
+ .segcard.active{background:#20283d;border-color:var(--accent)}
+ .segcard .sh{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+ .segcard .segtitle{font-size:19px;font-weight:700;color:var(--fg)}
+ .segcard .segtime{font-size:15px;color:var(--fg3)}
+ .segrow{font-size:16px;margin:6px 0;display:flex;gap:8px}
+ .segrow .k{min-width:80px;color:var(--fg3);flex-shrink:0}
+ .segrow .v{font-weight:600;color:var(--fg)}
+ .sentence{font-size:17px;margin:10px 0;padding:10px 12px;background:var(--bg3);border-radius:6px;line-height:1.4;color:var(--fg)}
+ .verdicts{display:flex;flex-direction:column;gap:8px;margin-top:10px;font-size:15px}
+ .vgroup{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+ .vgroup .k{min-width:80px;color:var(--fg3)}
+ .notein{width:280px;max-width:60%}
 </style></head><body>
 <div id="side"><h3 style="margin:4px">Episodes</h3><div id="eplist"></div></div>
 <div id="main">
@@ -108,11 +125,11 @@ HTML = r"""<!doctype html><html><head><meta charset="utf-8">
   <button class="big" id="export">Export verdicts JSON</button>
   <span class="hint" id="progress"></span>
  </div>
- <h2 id="title"></h2><div id="task" class="hint"></div>
+ <h2 id="title"></h2><div id="task"></div>
  <video id="vid" controls preload="metadata"></video>
  <div id="timeline"></div><div id="caption"></div>
  <div id="epverdict"></div>
- <table id="segtable"></table>
+ <div id="seglist"></div>
  <p class="hint">Per segment: <b>&#9654; play</b> plays the segment with 0.5 s
  pre/post-roll (judge the cut points). <b>Boundary</b> = start/end cuts correct,
  nothing missed inside. <b>Label</b> = action+hand+object correct.
@@ -154,7 +171,7 @@ function btn(cls, state, want, label, cb){
 function renderMain(){
   const ep = DATA[cur];
   $('title').textContent = ep.id;
-  $('task').textContent = 'Task: ' + ep.task;
+  $('task').textContent = ep.task;
   vid.src = 'media/' + ep.file; loopEnd = null;
   const dur = ep.duration;
   $('timeline').innerHTML = ep.subtasks.map((s,i)=>
@@ -165,19 +182,24 @@ function renderMain(){
   $('epverdict').innerHTML = `<b>Episode-level: is the subtask sequence coherent and complete?</b>
     ${btn('',e.episode_ok,true,'Coherent',`epv(true)`)} ${btn('',e.episode_ok,false,'Issues',`epv(false)`)}
     note: <input type="text" value="${(e.note||'').replace(/"/g,'&quot;')}" onchange="epnote(this.value)">`;
-  $('segtable').innerHTML = '<tr><th></th><th>t</th><th>action</th><th>hand</th><th>object</th><th>sentence</th><th>boundary</th><th>label</th><th>sentence ok</th><th>note</th></tr>' +
-    ep.subtasks.map(s=>{
+  $('seglist').innerHTML = ep.subtasks.map(s=>{
       const g = sv(ep, s.id);
-      return `<tr id="row${s.id}">
-       <td class="play" onclick="playSeg(${s.id})">&#9654; #${s.id}</td>
-       <td>${s.start_time.toFixed(1)}&ndash;${s.end_time.toFixed(1)}s</td>
-       <td><b>${s.action}</b>${s.flags.length?`<div class="flag">${s.flags.join(',')}</div>`:''}</td>
-       <td>${s.hand}</td><td>${s.object}</td><td style="max-width:290px">${s.subtask}</td>
-       <td>${btn('',g.boundary,true,'&#10003;',`segv(${s.id},'boundary',true)`)}${btn('',g.boundary,false,'&#10007;',`segv(${s.id},'boundary',false)`)}</td>
-       <td>${btn('',g.label,true,'&#10003;',`segv(${s.id},'label',true)`)}${btn('',g.label,false,'&#10007;',`segv(${s.id},'label',false)`)}</td>
-       <td>${btn('',g.sentence,true,'&#10003;',`segv(${s.id},'sentence',true)`)}${btn('',g.sentence,false,'&#10007;',`segv(${s.id},'sentence',false)`)}</td>
-       <td><input type="text" value="${(g.note||'').replace(/"/g,'&quot;')}" onchange="segnote(${s.id},this.value)"></td>
-      </tr>`;}).join('');
+      return `<div class="segcard" id="row${s.id}">
+       <div class="sh">
+         <span class="segtitle play" onclick="playSeg(${s.id})">&#9654; #${s.id} &mdash; ${s.action}</span>
+         <span class="segtime">${s.start_time.toFixed(1)}&ndash;${s.end_time.toFixed(1)}s</span>
+       </div>
+       ${s.flags.length?`<div class="flag">flags: ${s.flags.join(', ')}</div>`:''}
+       <div class="segrow"><span class="k">hand</span><span class="v">${s.hand}</span></div>
+       <div class="segrow"><span class="k">object</span><span class="v">${s.object}</span></div>
+       <div class="sentence">${s.subtask}</div>
+       <div class="verdicts">
+         <div class="vgroup"><span class="k">boundary</span>${btn('',g.boundary,true,'&#10003; correct',`segv(${s.id},'boundary',true)`)}${btn('',g.boundary,false,'&#10007; wrong',`segv(${s.id},'boundary',false)`)}</div>
+         <div class="vgroup"><span class="k">label</span>${btn('',g.label,true,'&#10003; correct',`segv(${s.id},'label',true)`)}${btn('',g.label,false,'&#10007; wrong',`segv(${s.id},'label',false)`)}</div>
+         <div class="vgroup"><span class="k">sentence</span>${btn('',g.sentence,true,'&#10003; correct',`segv(${s.id},'sentence',true)`)}${btn('',g.sentence,false,'&#10007; wrong',`segv(${s.id},'sentence',false)`)}</div>
+         <div class="vgroup"><span class="k">note</span><input class="notein" type="text" value="${(g.note||'').replace(/"/g,'&quot;')}" onchange="segnote(${s.id},this.value)"></div>
+       </div>
+      </div>`;}).join('');
   renderSide(); renderProgress();
 }
 window.go = i => { cur = i; renderMain(); };
@@ -190,7 +212,7 @@ window.playSeg = sid => {
   vid.currentTime = Math.max(0, s.start_time - 0.5);
   loopEnd = Math.min(DATA[cur].duration, s.end_time + 0.5);
   vid.play();
-  document.querySelectorAll('#segtable tr').forEach(r=>r.classList.remove('active'));
+  document.querySelectorAll('.segcard').forEach(r=>r.classList.remove('active'));
   const row = $('row'+sid); if(row) row.classList.add('active');
 };
 vid.addEventListener('timeupdate', ()=>{
@@ -223,6 +245,9 @@ def main():
     ap.add_argument("--category", default=None)
     ap.add_argument("--n", type=int, default=20)
     ap.add_argument("--seed", type=int, default=11)
+    ap.add_argument("--force-transcode", action="store_true",
+                    help="re-encode media even if it already exists "
+                         "(use after changing transcode() settings)")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -236,7 +261,7 @@ def main():
     for a in episodes:
         slug = a["episode_id"].replace("/", "__")
         src = data_dir / f"{a['episode_id']}.mp4"
-        transcode(src, media / f"{slug}.mp4")
+        transcode(src, media / f"{slug}.mp4", force=args.force_transcode)
         manifest.append({
             "id": a["episode_id"], "task": a["task"], "file": f"{slug}.mp4",
             "duration": (a["total_frames"] - 1) / a["fps"],
