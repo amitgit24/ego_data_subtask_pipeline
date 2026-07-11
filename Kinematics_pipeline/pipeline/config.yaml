@@ -5,7 +5,7 @@
 
 paths:
   data_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/test
-  output_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/outputs
+  output_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/Kinematics_pipeline/outputs
   model_path: /mnt/3466ADC766AD8A66/research_paper/Robointer/models/Qwen3-VL-32B-Instruct
 
 # ---- confirmed by Level 0 audit (2026-07-10) ----

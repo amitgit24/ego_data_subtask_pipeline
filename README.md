@@ -1,4 +1,4 @@
-# EgoDex Subtask Annotation Pipeline
+# EgoDex Subtask Annotation — Kinematics Pipeline
 
 A 3-level pipeline that converts [EgoDex](https://arxiv.org/abs/2505.11709) episodes
 (MP4 video + HDF5 3D hand poses) into schema-validated per-episode subtask
@@ -6,19 +6,29 @@ annotations: frame-accurate boundaries, a closed action taxonomy, the acting
 hand (computed from kinematics), the manipulated object, and a style-varied
 one-sentence description. Built to generate VLM training data for VLA models.
 
+This is the **kinematics-first** approach: subtask boundaries come purely
+from 3D hand-pose signals, and the VLM only labels segments it's handed — it
+never chooses where to cut. `Qwen_direct_pipeline/` (sibling folder, WIP) is
+a second, simpler approach that asks the VLM to do the segmentation itself
+directly from video, for comparison.
+
 ## Repo layout
 
 ```
-pipeline/          all pipeline code (Levels 0–3), config, task categories
-tools/review/       human verification UI (segment-clip review + scoring)
-experiments/        one markdown file per experiment: what was run, what
-                    was measured, what changed and why — read this first
-test/               EgoDex dataset (gitignored)
-outputs/            all generated artifacts (gitignored) — audits,
-                    boundaries, labels, annotations, review media
+test/                        EgoDex dataset (gitignored) — shared across pipelines
+tools/review/                 human verification UI (segment-clip review + scoring)
+                               — shared across pipelines
+Kinematics_pipeline/           this pipeline
+  pipeline/                    all pipeline code (Levels 0–3), config, task categories
+  experiments/                 one markdown file per experiment: what was run, what
+                               was measured, what changed and why — read this first
+  outputs/                     all generated artifacts (gitignored) — audits,
+                               boundaries, labels, annotations, review media
+Qwen_direct_pipeline/          sibling project: VLM-only segmentation (WIP)
 ```
 
-See `experiments/README.md` for the chronological build/validation log.
+See `Kinematics_pipeline/experiments/README.md` for the chronological
+build/validation log of this pipeline.
 
 ## Architecture
 
@@ -58,7 +68,7 @@ CUDA_VISIBLE_DEVICES=0 VLLM_USE_FLASHINFER_SAMPLER=0 \
   --limit-mm-per-prompt '{"image": 6}' --gpu-memory-utilization 0.92 --port 8000
 
 # run the pipeline
-cd pipeline
+cd Kinematics_pipeline/pipeline
 python run_pipeline.py --episodes 20_random --levels 1,2,3
 python run_pipeline.py --category pick_place --n 200 --levels 1,2,3
 python run_pipeline.py --verify-only --levels 3
@@ -68,16 +78,21 @@ python check_categories.py
 ```
 
 Paths, HDF5 key conventions, and every threshold live in
-`pipeline/config.yaml`. Kinematic task-family definitions (motion
-signature, prompt hints, verb priors) live in `pipeline/task_categories.yaml`.
+`Kinematics_pipeline/pipeline/config.yaml`. Kinematic task-family
+definitions (motion signature, prompt hints, verb priors) live in
+`Kinematics_pipeline/pipeline/task_categories.yaml`.
 
 ### Human review tool
+
+Shared across pipelines — points at whichever pipeline's `outputs/` you ask
+it to review.
 
 ```bash
 cd tools/review
 python make_review.py --category pick_place --n 20
-# open ../../outputs/review/index.html in a browser, judge boundary/label/
-# sentence per segment + episode coherence, Export verdicts JSON
+# open ../../Kinematics_pipeline/outputs/review/index.html in a browser,
+# judge boundary/label/sentence per segment + episode coherence, Export
+# verdicts JSON
 python report_verdicts.py ~/Downloads/review_verdicts.json
 ```
 
@@ -88,5 +103,5 @@ python report_verdicts.py ~/Downloads/review_verdicts.json
 - On Blackwell (sm_120) GPUs, `VLLM_USE_FLASHINFER_SAMPLER=0` is required with
   vLLM 0.24 (FlashInfer capability probe fails), and single-GPU serving is
   preferred over tensor parallel (NCCL P2P hangs on workstation boards).
-- The dataset itself (`test/`) and all pipeline outputs (`outputs/`) are
-  gitignored; only code, configuration, and experiment docs are tracked.
+- The dataset (`test/`) and all pipeline outputs (`Kinematics_pipeline/outputs/`)
+  are gitignored; only code, configuration, and experiment docs are tracked.
