@@ -8,24 +8,35 @@ one-sentence description. Built to generate VLM training data for VLA models.
 
 This is the **kinematics-first** approach: subtask boundaries come purely
 from 3D hand-pose signals, and the VLM only labels segments it's handed — it
-never chooses where to cut. `Qwen_direct_pipeline/` (sibling folder, WIP) is
-a second, simpler approach that asks the VLM to do the segmentation itself
-directly from video, for comparison.
+never chooses where to cut. `Qwen_direct_pipeline/` (sibling folder) is a
+second, simpler approach that asks Qwen3-VL to find segment boundaries
+itself directly from dense video windows, for comparison — built and
+verified end to end on one episode so far, not yet run at scale.
 
 ## Repo layout
 
 ```
 test/                        EgoDex dataset (gitignored) — shared across pipelines
-tools/review/                 human verification UI (segment-clip review + scoring)
-                               — shared across pipelines
 Kinematics_pipeline/           this pipeline
   pipeline/                    all pipeline code (Levels 0–3), config, task categories
+  tools/review/                 human verification UI (segment-clip review + scoring)
   experiments/                 one markdown file per experiment: what was run, what
                                was measured, what changed and why — read this first
   outputs/                     all generated artifacts (gitignored) — audits,
                                boundaries, labels, annotations, review media
-Qwen_direct_pipeline/          sibling project: VLM-only segmentation (WIP)
+Qwen_direct_pipeline/          sibling project: VLM-only segmentation
+  pipeline/                    Levels 1–3 (no Level 0 audit — reuses Kinematics_pipeline's)
+  tools/review/                 its own copy of the reviewer (same verdict axes, for a
+                               fair head-to-head; separate localStorage key)
+  ref_code/                    the original reference script this pipeline was built from
+  outputs/                     gitignored, same shape as Kinematics_pipeline's
 ```
+
+Each pipeline's `tools/review/` is a self-contained copy — same review
+protocol and UI on both, adapted only for where each pipeline's annotations
+live and what its flag vocabulary is (see
+`Qwen_direct_pipeline/pipeline/level3_assembly/schema.py` for how its flags
+differ from this pipeline's kinematic cross-checks).
 
 See `Kinematics_pipeline/experiments/README.md` for the chronological
 build/validation log of this pipeline.
@@ -84,17 +95,18 @@ definitions (motion signature, prompt hints, verb priors) live in
 
 ### Human review tool
 
-Shared across pipelines — points at whichever pipeline's `outputs/` you ask
-it to review.
-
 ```bash
-cd tools/review
+cd Kinematics_pipeline/tools/review
 python make_review.py --category pick_place --n 20
-# open ../../Kinematics_pipeline/outputs/review/index.html in a browser,
-# judge boundary/label/sentence per segment + episode coherence, Export
-# verdicts JSON
+# open ../../outputs/review/index.html in a browser, judge boundary/label/
+# sentence per segment + episode coherence, Export verdicts JSON
 python report_verdicts.py ~/Downloads/review_verdicts.json
 ```
+
+`Qwen_direct_pipeline/tools/review/` works the same way (no `--category`
+flag, since that pipeline has no task-category concept) and writes its
+export as `qwen_direct_review_verdicts.json` under a distinct localStorage
+key, so reviewing both pipelines in the same browser doesn't collide.
 
 ## Notes
 
