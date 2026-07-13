@@ -1,0 +1,84 @@
+# Qwen-direct pipeline configuration — VLM-only segmentation (no 3D pose).
+#
+# Companion to ../../Kinematics_pipeline/pipeline/config.yaml. Both
+# pipelines share the same dataset, the same closed action taxonomy, hand
+# vocabulary, and sentence style templates (imported from Kinematics_pipeline
+# — see common.py) so their outputs are directly comparable. What differs is
+# how segment BOUNDARIES are found: Kinematics_pipeline computes them from
+# 3D hand-pose signals; this pipeline asks Qwen3-VL to find them directly
+# from dense video windows (see level1_transitions/).
+#
+# NOTHING in this pipeline has been run yet — thresholds below are ported
+# from ref_code/segment_transitions.py or copied from Kinematics_pipeline
+# for a fair starting comparison, and should be revisited after the first
+# real run + verifier pass, exactly like every level in Kinematics_pipeline
+# was tuned.
+
+paths:
+  data_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/test
+  output_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/Qwen_direct_pipeline/outputs
+  model_path: /mnt/3466ADC766AD8A66/research_paper/Robointer/models/Qwen3-VL-32B-Instruct
+
+# language-annotation resolution — same facts established by Level 0 audit
+# in Kinematics_pipeline (see Kinematics_pipeline/experiments/01_*.md).
+# Duplicated here (not imported) so this pipeline's config is self-contained.
+hdf5:
+  task_attr: task
+  description_attr: llm_description
+  description2_attr: llm_description2
+  which_description_attr: which_llm_description
+  fallback_description_attr: description
+
+video:
+  fps_fallback: 30.0     # only used if a video's fps can't be probed
+
+model:
+  attn_implementation: sdpa   # sdpa | flash_attention_2 | eager
+  dtype: bfloat16
+
+# ---- Level 1: VLM transition-frame detection (no kinematics at all) ----
+# Ported from ref_code/segment_transitions.py. The video is walked in
+# non-overlapping windows; EVERY frame in a window is shown to the model as
+# true video input (not a handful of keyframes), so no candidate transition
+# instant is skipped. The model reports only the frame(s) where the
+# hand-object interaction state changes; everything else is a continuation
+# and gets no boundary.
+level1_transitions:
+  window_frames: 48        # frames per window == stride (no overlap)
+  max_new_tokens: 512
+  temperature: 0.2
+  repetition_penalty: 1.3
+  max_retries: 3
+  retry_backoff_sec: 3.0
+  min_segment_frames: 30   # degenerate-check floor (1s @ 30fps) — matches
+                            # Kinematics_pipeline for a fair first comparison
+
+# ---- Level 2: per-segment semantic labeling ----
+# Action taxonomy, hand vocabulary, and the 6 sentence style templates are
+# IMPORTED from Kinematics_pipeline (see common.py), not redefined — so
+# both pipelines' outputs use identical vocabulary. Structural difference
+# from Kinematics_pipeline: there is no pose signal to compute the hand
+# from, so the VLM is asked for it directly, and there is no vLLM
+# guided-decoding here (local transformers generate() has no schema
+# constraint) — label_segments.py validates the closed vocab post-hoc and
+# retries on violation instead.
+level2_labeling:
+  keyframes_per_segment: 5
+  keyframe_size: 768
+  style_variation: true
+  temperature: 0.0
+  max_new_tokens: 300
+  max_retries: 3
+  debug_first_n: 10
+
+# ---- Level 3: validation & assembly ----
+# Same merge/idle/schema shape as Kinematics_pipeline. Cross-check flags
+# differ: there is no independent kinematic signal to check a verb against,
+# so `kinematic_mismatch` does not exist here. `low_confidence` (VLM
+# self-report) and `short_segment` (computed in code) take its place.
+assembly:
+  merge_gap_s: 0.5
+  idle_gap_s: 1.0
+  short_segment_frac: 0.34   # flag a merged segment under this fraction of
+                              # its episode's median segment duration
+  pipeline_version: "0.1.0-direct"
