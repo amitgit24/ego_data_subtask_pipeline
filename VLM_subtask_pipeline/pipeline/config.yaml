@@ -1,0 +1,82 @@
+# VLM single-pass subtask-pipeline configuration.
+#
+# Third EgoDex pipeline, sibling to Kinematics_pipeline and
+# VLM_seg_subtask_pipeline, on the SAME test data and SAME output schema so all
+# three are directly comparable. What is unique here: a SINGLE Qwen3-VL pass per
+# sliding window produces BOTH the segment boundaries AND the subtask labels at
+# once (frame + subtask "in one go"), instead of a separate segment stage then a
+# label stage. Boundaries and labels are then stitched across overlapping
+# windows into one coherent per-episode annotation.
+#
+# NOTHING here has been tuned yet — the window geometry knobs below (frame_skip,
+# overlap_frac) are exactly the parameters the study exists to sweep: how dense
+# the sampling should be and how much window overlap is needed for cross-window
+# coherence.
+
+paths:
+  data_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/test
+  output_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/VLM_subtask_pipeline/outputs
+  model_path: /mnt/3466ADC766AD8A66/research_paper/Robointer/models/Qwen3-VL-32B-Instruct
+
+# language-annotation resolution — same facts as the sibling pipelines
+hdf5:
+  task_attr: task
+  description_attr: llm_description
+  description2_attr: llm_description2
+  which_description_attr: which_llm_description
+  fallback_description_attr: description
+
+video:
+  fps_fallback: 30.0
+
+model:
+  attn_implementation: sdpa   # sdpa | flash_attention_2 | eager
+  dtype: bfloat16
+
+# ---- single-pass sliding-window generation (the heart of this pipeline) ----
+# Per window the model is shown model_frames frames sampled with stride
+# (frame_skip + 1), so ONE window covers model_frames * (frame_skip + 1) source
+# frames:
+#   frame_skip 0 -> 48 consecutive source frames per window
+#   frame_skip 1 -> 48 frames sampled from 96 source frames (every other)
+#   frame_skip 2 -> 48 frames sampled from 144 source frames (every third)
+# Consecutive windows overlap by overlap_frac of that source span (advance =
+# span * (1 - overlap_frac)); the overlap is what the model re-sees so a subtask
+# spanning a window boundary stays coherent. Both knobs are meant to be swept.
+generate:
+  model_frames: 48         # frames actually fed to the model per window
+  frame_skip: 1            # 0, 1, or 2  -> sampling stride = frame_skip + 1
+  overlap_frac: 0.33       # fraction of the window's source span that
+                           # consecutive windows share (0.0 = no overlap)
+  story_context_segments: 3  # how many finalized subtasks to echo back into
+                             # the next window's prompt for coherence
+  max_new_tokens: 768      # a window may emit several labeled subtasks
+  temperature: 0.2
+  repetition_penalty: 1.2
+  max_retries: 3
+  retry_backoff_sec: 3.0
+  min_segment_frames: 10   # degenerate floor (1/3s @ 30fps); enforced in L3.
+                           # Deliberately LOWER than the siblings' 30: this
+                           # pipeline's boundaries are semantic (the model
+                           # names each phase), and a 1s floor cascades short
+                           # neighboring phases into one wrong label. Verified
+                           # on add_remove_lid/12 (92-frame episode): floor 30
+                           # -> everything collapsed to 1 subtask "grasp";
+                           # floor 12 -> 3 subtasks but the 11-frame "remove"
+                           # (the task's key verb) was absorbed; floor 10 ->
+                           # idle/grasp/remove/place, correct. A sweep knob
+                           # like frame_skip/overlap_frac.
+  debug_first_n: 10
+
+# ---- stitching overlapping windows into one segment list ----
+stitch:
+  iou_merge: 0.5           # two candidate subtasks with the same action and
+                           # frame-overlap IoU above this are the SAME subtask
+                           # (union span, keep the higher-confidence label)
+
+# ---- L3 assembly (identical shape to the sibling pipelines) ----
+assembly:
+  merge_gap_s: 0.5
+  idle_gap_s: 1.0
+  short_segment_frac: 0.34
+  pipeline_version: "0.1.0-singlepass"
