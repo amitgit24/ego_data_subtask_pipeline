@@ -11,14 +11,15 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import load_config  # noqa: E402
+from common import apply_task_overrides, load_config  # noqa: E402
 from postprocess import postprocess  # noqa: E402
 from schema import EpisodeAnnotation  # noqa: E402
 
 
 def assemble_episode(label_file, cfg):
     record = json.loads(label_file.read_text())
-    subtasks, review = postprocess(record, cfg)
+    task_name = record["episode_id"].split("/")[0]
+    subtasks, review = postprocess(record, apply_task_overrides(cfg, task_name))
     ann = EpisodeAnnotation(
         episode_id=record["episode_id"], task=record["task"], fps=record["fps"],
         total_frames=record["n_frames"],

@@ -1,0 +1,95 @@
+[
+  {
+    "chunk": 0,
+    "span": [
+      0,
+      47
+    ],
+    "story": "",
+    "raw_response": "{\n  \"subtasks\": [\n    {\n      \"start_frame\": 0,\n      \"end_frame\": 17,\n      \"action\": \"idle\",\n      \"hand\": \"both\",\n      \"object\": \"two white paper cups and two white lids on a yellow table\",\n      \"subtask\": \"Both arms are idle with hands resting near the lids on the table.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 17,\n      \"end_frame\": 26,\n      \"action\": \"grasp\",\n      \"hand\": \"both\",\n      \"object\": \"the round white lid near the left cup\",\n      \"subtask\": \"Both arms grasp the round white lid near the left cup.\",\n      \"confidence\": \"high\",\n      \"ongoing\": false\n    },\n    {\n      \"start_frame\": 26,\n      \"end_frame\": 47,\n      \"action\": \"place\",\n      \"hand\": \"both\",\n      \"object\": \"the round white lid onto the leftmost cup\",\n      \"subtask\": \"Both arms place the round white lid onto the leftmost cup.\",\n      \"confidence\": \"high\",\n      \"ongoing\": true\n    }\n  ]\n}",
+    "kept": [
+      {
+        "start_frame": 0,
+        "end_frame": 17,
+        "action": "idle",
+        "hand": "both",
+        "object": "two white paper cups and two white lids on a yellow table",
+        "subtask": "Both arms are idle with hands resting near the lids on the table.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 17,
+        "end_frame": 26,
+        "action": "grasp",
+        "hand": "both",
+        "object": "the round white lid near the left cup",
+        "subtask": "Both arms grasp the round white lid near the left cup.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 26,
+        "end_frame": 47,
+        "action": "place",
+        "hand": "both",
+        "object": "the round white lid onto the leftmost cup",
+        "subtask": "Both arms place the round white lid onto the leftmost cup.",
+        "confidence": "high",
+        "ongoing": true
+      }
+    ],
+    "open_tail_after": {
+      "start_frame": 26,
+      "end_frame": 47,
+      "action": "place",
+      "hand": "both",
+      "object": "the round white lid onto the leftmost cup",
+      "subtask": "Both arms place the round white lid onto the leftmost cup.",
+      "confidence": "high",
+      "ongoing": true
+    }
+  },
+  {
+    "chunk": 1,
+    "span": [
+      48,
+      95
+    ],
+    "story": "  frames 0-17: idle \u2014 Both arms are idle with hands resting near the lids on the table.\n  frames 17-26: grasp \u2014 Both arms grasp the round white lid near the left cup.",
+    "raw_response": "{\n  \"subtasks\": [\n    {\n      \"start_frame\": 26,\n      \"end_frame\": 74,\n      \"action\": \"place\",\n      \"hand\": \"both\",\n      \"object\": \"the round white lid\",\n      \"subtask\": \"Both arms place the round white lid onto the leftmost cup.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 78,\n      \"end_frame\": 95,\n      \"action\": \"retract\",\n      \"hand\": \"both\",\n      \"object\": \"the round white lid\",\n      \"subtask\": \"Both arms retract from the leftmost cup after placing the lid.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 86,\n      \"end_frame\": 95,\n      \"action\": \"reach\",\n      \"hand\": \"right\",\n      \"object\": \"the round white lid\",\n      \"subtask\": \"Right arm reaches for the round white lid near the rightmost cup.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": true\n    }\n  ]\n}",
+    "kept": [
+      {
+        "start_frame": 26,
+        "end_frame": 74,
+        "action": "place",
+        "hand": "both",
+        "object": "the round white lid",
+        "subtask": "Both arms place the round white lid onto the leftmost cup.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 78,
+        "end_frame": 95,
+        "action": "retract",
+        "hand": "both",
+        "object": "the round white lid",
+        "subtask": "Both arms retract from the leftmost cup after placing the lid.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 86,
+        "end_frame": 95,
+        "action": "reach",
+        "hand": "right",
+        "object": "the round white lid",
+        "subtask": "Right arm reaches for the round white lid near the rightmost cup.",
+        "confidence": "high",
+        "ongoing": true
+      }
+    ],
+    "open_tail_after": null
+  }
+]

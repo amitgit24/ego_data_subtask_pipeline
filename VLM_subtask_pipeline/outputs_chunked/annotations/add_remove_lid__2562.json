@@ -1,0 +1,82 @@
+{
+  "episode_id": "add_remove_lid/2562",
+  "task": "Add the lid onto each of the three cups placed on the wooden table with a red background.",
+  "fps": 30.0,
+  "total_frames": 294,
+  "pipeline_version": "0.1.0-singlepass-chunked",
+  "subtasks": [
+    {
+      "id": 0,
+      "action": "grasp",
+      "hand": "right",
+      "object": "clear plastic bag containing small green items",
+      "subtask": "Right hand grasps the clear plastic bag containing small green items from the box.",
+      "start_frame": 0,
+      "end_frame": 122,
+      "start_time": 0.0,
+      "end_time": 4.066666666666666,
+      "duration": 4.066666666666666,
+      "boundary_source_start": "vlm_subtask",
+      "boundary_source_end": "vlm_subtask",
+      "style_id": -1,
+      "confidence": "high",
+      "flags": []
+    },
+    {
+      "id": 1,
+      "action": "retract",
+      "hand": "right",
+      "object": "clear plastic bag containing small green items",
+      "subtask": "Right hand retracts the clear plastic bag containing small green items from the box.",
+      "start_frame": 122,
+      "end_frame": 165,
+      "start_time": 4.066666666666666,
+      "end_time": 5.5,
+      "duration": 1.4333333333333333,
+      "boundary_source_start": "vlm_subtask",
+      "boundary_source_end": "vlm_subtask",
+      "style_id": -1,
+      "confidence": "high",
+      "flags": []
+    },
+    {
+      "id": 2,
+      "action": "unfold",
+      "hand": "both",
+      "object": "folded wooden chessboard",
+      "subtask": "Both hands unfold the folded wooden chessboard on the table.",
+      "start_frame": 165,
+      "end_frame": 274,
+      "start_time": 5.5,
+      "end_time": 9.133333333333333,
+      "duration": 3.6333333333333333,
+      "boundary_source_start": "vlm_subtask",
+      "boundary_source_end": "vlm_subtask",
+      "style_id": -1,
+      "confidence": "high",
+      "flags": []
+    },
+    {
+      "id": 3,
+      "action": "reposition",
+      "hand": "left",
+      "object": "unfolded wooden chessboard",
+      "subtask": "Left hand repositions the unfolded wooden chessboard on the table.",
+      "start_frame": 274,
+      "end_frame": 293,
+      "start_time": 9.133333333333333,
+      "end_time": 9.766666666666667,
+      "duration": 0.6333333333333333,
+      "boundary_source_start": "vlm_subtask",
+      "boundary_source_end": "vlm_subtask",
+      "style_id": -1,
+      "confidence": "high",
+      "flags": [
+        "short_segment"
+      ]
+    }
+  ],
+  "review_queue": [
+    3
+  ]
+}

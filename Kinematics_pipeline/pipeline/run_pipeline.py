@@ -133,6 +133,9 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--verify-only", action="store_true")
+    ap.add_argument("--mirror-to-source", action="store_true",
+                    help="Level 3: also write each annotation next to its "
+                         "source .hdf5 (same folder, same base filename)")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -167,7 +170,8 @@ def main():
             continue
         if lv == 2:
             check_vlm_endpoint(cfg)
-        run(*LEVEL_SCRIPTS[lv], ["--episodes"] + episodes + force)
+        mirror = ["--mirror-to-source"] if (lv == 3 and args.mirror_to_source) else []
+        run(*LEVEL_SCRIPTS[lv], ["--episodes"] + episodes + force + mirror)
 
     print("\npipeline complete.")
 

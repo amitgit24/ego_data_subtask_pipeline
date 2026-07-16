@@ -18,10 +18,17 @@ import numpy as np
 from scipy.signal import find_peaks
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import episode_id, episode_slug, load_config, sample_episodes  # noqa: E402
+from common import (apply_task_overrides, episode_id, episode_slug,  # noqa: E402
+                    load_config, sample_episodes)
 from signals import compute_signals  # noqa: E402
 
-PRIORITY = {"grasp": 3, "release": 3, "pause": 2, "gaze": 1}
+# release outranks grasp: when a release (end of action N) and a grasp
+# (start of action N+1) collide inside merge_window/min_segment_frames, the
+# cut belongs at the release — the hand's retraction toward the next object
+# is part of the NEXT action cycle, not the one just finished (human review
+# 2026-07-15: 12/17 boundary errors were retraction glued to the previous
+# segment because the grasp edge won the collision instead)
+PRIORITY = {"release": 4, "grasp": 3, "pause": 2, "gaze": 1}
 
 
 def detect_events(sig, cfg):
@@ -30,15 +37,32 @@ def detect_events(sig, cfg):
     Kept separately from boundaries: Level 2 uses them for keyframes and
     hand assignment even when the event did not survive boundary fusion."""
     k = cfg["kinematics"]
+    # An aperture-opening peak is only a RELEASE if the wrist is slow at
+    # that moment: letting go of a placed object happens with the hand
+    # decelerated at the placement point. The hand also opens mid-swing to
+    # pre-shape for the next grasp — at high wrist speed — and treating
+    # that as a release puts the boundary at the END of the retraction,
+    # gluing the trace-back to the previous segment (add_remove_lid round-4
+    # review; measured separation: true releases <= 0.18 m/s, pre-grasp
+    # openings >= 0.30 m/s). Disabled unless release_speed_max is set.
+    release_speed_max = k.get("release_speed_max")
     events = []
     for side in ("left", "right"):
         av = sig[f"aperture_vel_{side}"]
+        speed = sig[f"speed_{side}"]
+        # gate on THIS hand's fingertip validity only — the union mask
+        # silenced one hand's real events whenever the other was occluded
+        masked = sig[f"masked_pinch_{side}"]
         for kind, series in (("grasp", -av), ("release", av)):
             peaks, props = find_peaks(series, height=k["aperture_vel_thresh"])
             for p, h in zip(peaks, props["peak_heights"]):
-                if not sig["masked"][p]:
-                    events.append({"frame": int(p), "hand": side,
-                                   "type": kind, "magnitude": float(h)})
+                if masked[p]:
+                    continue
+                if (kind == "release" and release_speed_max
+                        and speed[p] > release_speed_max):
+                    continue
+                events.append({"frame": int(p), "hand": side,
+                               "type": kind, "magnitude": float(h)})
     events.sort(key=lambda e: e["frame"])
     return events
 
@@ -48,11 +72,15 @@ def detect_candidates(sig, events, cfg):
     k = cfg["kinematics"]
     cands = []
 
-    # 1. pause: local minima of combined speed
+    # 1. pause: local minima of combined speed — a wrist-only signal, so
+    # only suppress where BOTH wrists are untracked (fingertip occlusion
+    # during manipulation must not silence it; that is where placements
+    # and their pauses happen)
     sc = sig["speed_combined"]
+    wrists_gone = sig["masked_wrist_left"] & sig["masked_wrist_right"]
     minima, props = find_peaks(-sc, prominence=k["pause_prominence"])
     for m in minima:
-        if sc[m] < k["pause_speed_max"] and not sig["masked"][m]:
+        if sc[m] < k["pause_speed_max"] and not wrists_gone[m]:
             cands.append({"frame": int(m), "source": "pause",
                           "hand": None, "event_type": None,
                           "magnitude": float(-sc[m])})
@@ -63,16 +91,17 @@ def detect_candidates(sig, events, cfg):
                       "hand": e["hand"], "event_type": e["type"],
                       "magnitude": e["magnitude"]})
 
-    # 3. gaze shift (secondary)
+    # 3. gaze shift (secondary) — head pose only; hand-tracking masks are
+    # irrelevant to it, so no mask gate (the camera transform has no
+    # confidence channel and audited 0 NaNs)
     hr = sig["head_rot_speed"]
     thresh = max(np.percentile(hr, k["head_rot_percentile"]),
                  k.get("head_rot_min_rad_s", 0.25))
     peaks, props = find_peaks(hr, height=thresh)
     for p, h in zip(peaks, props["peak_heights"]):
-        if not sig["masked"][p]:
-            cands.append({"frame": int(p), "source": "gaze",
-                          "hand": None, "event_type": None,
-                          "magnitude": float(h)})
+        cands.append({"frame": int(p), "source": "gaze",
+                      "hand": None, "event_type": None,
+                      "magnitude": float(h)})
 
     cands.sort(key=lambda c: c["frame"])
     return cands
@@ -157,6 +186,7 @@ def build_segments(boundaries, events, fps):
 
 def propose_boundaries(h5_path, cfg):
     """Full Level 1 result for one episode."""
+    cfg = apply_task_overrides(cfg, h5_path.parent.name)
     sig = compute_signals(h5_path, cfg)
     events = detect_events(sig, cfg)
     cands = detect_candidates(sig, events, cfg)

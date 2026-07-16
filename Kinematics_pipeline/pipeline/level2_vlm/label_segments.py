@@ -27,11 +27,24 @@ import h5py  # noqa: E402
 
 from boundaries import propose_boundaries  # noqa: E402
 from common import (category_for_task, episode_slug, load_config,  # noqa: E402
-                    load_task_categories, resolve_description, sample_episodes)
+                    load_task_categories, load_task_config,
+                    resolve_description, sample_episodes, select_prompt_hint)
 from hand_assignment import assign_hand, kinematic_summary  # noqa: E402
 from keyframes import extract_keyframes, select_keyframes  # noqa: E402
 from taxonomy import (ACTION_GROUPS, RESPONSE_SCHEMA, STYLE_RULES,  # noqa: E402
-                      STYLES, style_for)
+                      STYLES, embodiment_for, style_for)
+
+# why a segment starts/ends where it does — shown to the VLM so it can tell
+# a transit segment (starts right after a release, no events inside) from a
+# manipulation segment, instead of parroting the previous action's verb
+BOUNDARY_GLOSS = {
+    "release": "an object was just let go there",
+    "grasp": "a new object is grasped there",
+    "pause": "the hands paused there",
+    "gaze": "the gaze shifted there",
+    "episode_start": "the episode begins",
+    "episode_end": "the episode ends",
+}
 
 GLOSSES = {
     "transfer": "object moved from point A to B",
@@ -63,7 +76,7 @@ def category_block(category):
 
 def build_prompt(segment, task_desc, kin_summary, hand, style_id, style,
                  keyframe_data, n_segments, episode_dur, style_variation,
-                 prev_context="", category=None):
+                 prev_context="", category=None, embodiment="hand"):
     """Returns OpenAI-format message content list (text + images interleaved)."""
     content = [{"type": "text", "text":
         "You label one segment of an egocentric human manipulation episode "
@@ -79,11 +92,29 @@ def build_prompt(segment, task_desc, kin_summary, hand, style_id, style,
     if style_variation:
         style_line = (f"Style for the 'subtask' sentence: {style[1]} "
                       f"Example shape: \"{style[2]}\"\n")
+    # the sentence is a VLA training target; the executing embodiment may be
+    # a robot arm, so the end-effector noun is rotated deterministically
+    style_line += (
+        f"In the 'subtask' sentence call the end-effector \"{embodiment}\" — "
+        f"\"left {embodiment}\", \"right {embodiment}\", "
+        f"\"both {embodiment}s\" — even if a style example says otherwise.\n")
 
+    n_events = len(segment.get("events_inside", []))
+    provenance = (
+        f"Why this segment starts here: {BOUNDARY_GLOSS.get(segment['start_source'], segment['start_source'])}. "
+        f"Why it ends here: {BOUNDARY_GLOSS.get(segment['end_source'], segment['end_source'])}. "
+        f"Grasp/release events inside this segment: {n_events}."
+        + (" A segment that begins right after a release and contains no "
+           "grasp/release events usually shows the hands travelling empty — "
+           "retracting from the finished spot or reaching toward the next "
+           "object. Label that motion (retract/reach/move); nothing is "
+           "placed or assembled in such a segment."
+           if segment["start_source"] == "release" and n_events == 0 else ""))
     content.append({"type": "text", "text": f"""
 Overall task (context for the WHOLE episode): {task_desc}
 This is segment {segment['id'] + 1} of {n_segments}, t={segment['start_time']:.1f}s to {segment['end_time']:.1f}s of a {episode_dur:.1f}s episode.
 Kinematic context (computed from 3D hand tracking, trust it for motion facts): {kin_summary}
+{provenance}
 {category_block(category)}{prev_context}
 IMPORTANT: the overall task describes the whole episode, but this segment may
 be only one phase of it — approaching, aligning, transporting, placing,
@@ -213,10 +244,15 @@ def process_episode(h5_path, cfg, backend, debug_budget):
         bfile.write_text(json.dumps(result, indent=2))
 
     with h5py.File(h5_path, "r") as f:
-        task_desc = resolve_description(dict(f.attrs), cfg)
+        attrs = dict(f.attrs)
+        task_desc = resolve_description(attrs, cfg)
 
     categories, task_map = load_task_categories()
     category = category_for_task(h5_path.parent.name, categories, task_map)
+    task_cfg = load_task_config(h5_path.parent.name)
+    hint = select_prompt_hint(task_cfg, attrs)
+    if category and hint:
+        category = dict(category, prompt_hint=hint)
     n_keyframes = min(v["keyframes_per_segment"]
                       + (category["keyframes_bonus"] if category else 0),
                       6)  # server is launched with --limit-mm-per-prompt image=6
@@ -225,6 +261,9 @@ def process_episode(h5_path, cfg, backend, debug_budget):
     episode_dur = (result["n_frames"] - 1) / fps
     segments = result["segments"]
     style_variation = v["style_variation"]
+    # one end-effector term for the WHOLE episode (~40% arm / 60% hand
+    # across episodes) so its subtasks read as one consistent sequence
+    embodiment = embodiment_for(result["episode_id"])
 
     # Segments are labeled IN ORDER so each prompt carries the story so far —
     # without this the model re-applies the task verb to every segment
@@ -251,12 +290,13 @@ def process_episode(h5_path, cfg, backend, debug_budget):
         content = build_prompt(segment, task_desc, kin, hand_info["hand"],
                                style_id, style, kf_data, len(segments),
                                episode_dur, style_variation, prev_context,
-                               category)
+                               category, embodiment)
         label, raw, attempts = label_one(backend, content, v["max_retries"])
         enriched = dict(segment)
         enriched.update({
             "hand": hand_info["hand"], "hand_scores": hand_info,
-            "style_id": style_id, "keyframes": [p for _, _, p in kf],
+            "style_id": style_id, "embodiment": embodiment,
+            "keyframes": [p for _, _, p in kf],
             "vlm": label, "vlm_attempts": attempts,
         })
         labeled.append(enriched)

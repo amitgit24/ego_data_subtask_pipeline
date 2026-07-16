@@ -24,6 +24,7 @@ CLI:
 import argparse
 import json
 import sys
+import threading
 from pathlib import Path
 
 import h5py
@@ -31,15 +32,17 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (ACTION_GROUPS, ACTIONS, CONFIDENCES, HANDS,  # noqa: E402
-                    episode_id, episode_slug, load_config, resolve_description,
-                    sample_episodes, style_for)
+                    apply_task_overrides, embodiment_for, episode_id,
+                    episode_slug, load_config, load_task_config,
+                    resolve_description, sample_episodes, select_prompt_hint,
+                    style_for)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "level1_transitions"))
-from model_backend import load_model  # noqa: E402
 from detect_transitions import process_episode as detect_boundaries  # noqa: E402
 from detect_transitions import tolerant_json  # noqa: E402
 
 from keyframes import extract_keyframes, select_keyframes  # noqa: E402
+from labeling_vlm_backend import EndpointBackend  # noqa: E402
 
 GLOSSES = {
     "transfer": "object moved from point A to B",
@@ -60,19 +63,21 @@ def taxonomy_block():
 
 
 def build_prompt(segment, task_desc, n_segments, episode_dur, style_id, style,
-                 style_variation, prev_context):
+                 style_variation, prev_context, task_hint=None,
+                 embodiment="hand"):
     hand_line = ", ".join(HANDS)
     style_line = ""
     if style_variation:
         style_line = (f"Style for the 'subtask' sentence: {style[1]} "
                       f"Example shape: \"{style[2]}\"\n")
+    hint_block = f"\nTask-specific guidance: {task_hint.strip()}\n" if task_hint else ""
     return f"""You label one segment of an egocentric human manipulation video.
 Keyframes of THIS SEGMENT ONLY follow, in temporal order.
 
 Overall task (context for the WHOLE episode): {task_desc}
 This is segment {segment['id'] + 1} of {n_segments}, t={segment['start_time']:.1f}s to {segment['end_time']:.1f}s of a {episode_dur:.1f}s episode.
 This segment's boundaries were found by watching the video directly: it starts right after "{segment['transition_before'] or 'the episode began'}" -> "{segment['transition_after'] or '(episode start)'}".
-{prev_context}
+{hint_block}{prev_context}
 IMPORTANT: the overall task describes the whole episode, but this segment may
 be only one phase of it. Do NOT copy the task verb unless the frames of THIS
 segment actually show that action happening. Take the purpose of a motion
@@ -91,12 +96,20 @@ The same words are grouped by kind below only to help you pick the right one
 {taxonomy_block()}
 
 Choose 'hand' from this closed vocabulary ONLY: {hand_line}
-(there is no separate hand sensor here — judge it from the frames)
+(there is no separate hand sensor here — judge it from the frames). Pick the
+SINGLE hand ("left"/"right") if only one hand is actively manipulating the
+object, even if the other hand is visible in frame resting, idle, or merely
+nearby without gripping anything. Use "both" only when both hands are each
+independently manipulating. Use "both_coordinating" only when both hands are
+working AS ONE unit on the same grip/motion (e.g. passing an object
+hand-to-hand, or both hands gripping one object together). A hand merely
+being in frame is not evidence it is acting.
 {style_line}{style[1] if not style_variation else ''}
 Exactly one short sentence (8-14 words) for 'subtask', present tense, never
-starting with a subordinate clause. Mention the hand when it is left, right,
-or both hands coordinating. Name the object with one visible distinguishing
-attribute when possible.
+starting with a subordinate clause. Call the end-effector "{embodiment}"
+(e.g. "left {embodiment}", "both {embodiment}s") in every sentence, even if
+a style example shows a different word. Name the object with one visible
+distinguishing attribute when possible.
 
 Respond ONLY with JSON: {{"action": "<one of the taxonomy actions>",
  "hand": "<one of: {hand_line}>",
@@ -105,7 +118,7 @@ Respond ONLY with JSON: {{"action": "<one of the taxonomy actions>",
 
 
 @torch.inference_mode()
-def generate_label(model, processor, keyframe_paths, prompt_text, v):
+def generate_label_transformers(model, processor, keyframe_paths, prompt_text, v):
     content = []
     for path, tag, t in keyframe_paths:
         content.append({"type": "text", "text": f"Frame at t={t:.1f}s ({tag}):"})
@@ -126,6 +139,18 @@ def generate_label(model, processor, keyframe_paths, prompt_text, v):
     return processor.batch_decode(trimmed, skip_special_tokens=True)[0]
 
 
+def generate_label_vllm(endpoint, keyframe_paths, prompt_text):
+    import base64
+    content = []
+    for path, tag, t in keyframe_paths:
+        content.append({"type": "text", "text": f"Frame at t={t:.1f}s ({tag}):"})
+        b64 = base64.b64encode(Path(path).read_bytes()).decode()
+        content.append({"type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+    content.append({"type": "text", "text": prompt_text})
+    return endpoint.generate(content)
+
+
 def valid_label(label):
     return (label.get("action") in ACTIONS and label.get("hand") in HANDS
            and label.get("confidence") in CONFIDENCES
@@ -133,12 +158,17 @@ def valid_label(label):
            and isinstance(label.get("subtask"), str) and label["subtask"])
 
 
-def label_one(model, processor, keyframe_paths, prompt_text, v):
+def label_one(backend, keyframe_paths, prompt_text, v):
     text = prompt_text
     last_err = None
     for attempt in range(v["max_retries"]):
         try:
-            raw = generate_label(model, processor, keyframe_paths, text, v)
+            if backend[0] == "transformers":
+                _, model, processor = backend
+                raw = generate_label_transformers(model, processor, keyframe_paths, text, v)
+            else:
+                _, endpoint = backend
+                raw = generate_label_vllm(endpoint, keyframe_paths, text)
             label = tolerant_json(raw)
             if not valid_label(label):
                 raise ValueError(f"label failed vocabulary check: {label}")
@@ -156,7 +186,10 @@ def label_one(model, processor, keyframe_paths, prompt_text, v):
             "confidence": "low"}, str(last_err), v["max_retries"])
 
 
-def process_episode(model, processor, h5_path, cfg, debug_budget=None):
+def process_episode(backend, h5_path, cfg, debug_budget=None):
+    """backend: ("transformers", model, processor) or ("vllm_endpoint", EndpointBackend)."""
+    task_name = h5_path.parent.name
+    cfg = apply_task_overrides(cfg, task_name)
     v = cfg["level2_labeling"]
     out_root = Path(cfg["paths"]["output_dir"]) / "labels"
     slug = episode_slug(h5_path)
@@ -166,12 +199,31 @@ def process_episode(model, processor, h5_path, cfg, debug_budget=None):
     if bfile.exists():
         result = json.loads(bfile.read_text())
     else:
-        result = detect_boundaries(model, processor, h5_path, cfg)
+        # Level 1's guided-JSON schema (transitions array) differs from
+        # Level 2's (single action/hand/object/subtask/confidence) — the
+        # vllm_endpoint backend is schema-bound at construction, so THIS
+        # level's backend cannot be reused for Level 1's call (found the
+        # hard way: reusing it here silently forced every Level 1 response
+        # into Level 2's schema, so "transitions" was always missing/empty,
+        # not an error). transformers backend has no schema constraint, so
+        # the (model, processor) pair is safely reusable as-is.
+        if backend[0] == "vllm_endpoint":
+            from transitions_vlm_backend import EndpointBackend as _L1Backend
+            l1_backend = ("vllm_endpoint", _L1Backend(cfg))
+        else:
+            l1_backend = backend
+        result = detect_boundaries(l1_backend, h5_path, cfg)
         bdir.mkdir(parents=True, exist_ok=True)
         bfile.write_text(json.dumps(result, indent=2))
 
     with h5py.File(h5_path, "r") as f:
-        task_desc = resolve_description(dict(f.attrs), cfg)
+        attrs = dict(f.attrs)
+        task_desc = resolve_description(attrs, cfg)
+    task_cfg = load_task_config(task_name)
+    level2_hint_cfg = {"prompt_hint_by_attr": task_cfg.get("level2_prompt_hint_by_attr"),
+                       "prompt_hints": task_cfg.get("level2_prompt_hints")}
+    task_hint = select_prompt_hint(level2_hint_cfg, attrs)
+    embodiment = embodiment_for(episode_id(h5_path))
 
     fps = result["fps"]
     episode_dur = (result["n_frames"] - 1) / fps
@@ -196,8 +248,9 @@ def process_episode(model, processor, h5_path, cfg, debug_budget=None):
                            + "\n".join(lines) + "\n")
 
         prompt = build_prompt(segment, task_desc, len(segments), episode_dur,
-                              style_id, style, v["style_variation"], prev_context)
-        label, raw, attempts = label_one(model, processor, kf_data, prompt, v)
+                              style_id, style, v["style_variation"], prev_context,
+                              task_hint, embodiment)
+        label, raw, attempts = label_one(backend, kf_data, prompt, v)
 
         enriched = dict(segment)
         enriched.update({"style_id": style_id, "keyframes": [p for _, _, p in kf],
@@ -216,21 +269,27 @@ def process_episode(model, processor, h5_path, cfg, debug_budget=None):
 
     labeled.sort(key=lambda s: s["id"])
     out = {"episode_id": result["episode_id"], "task": task_desc, "fps": fps,
-          "n_frames": result["n_frames"], "segments": labeled}
+          "n_frames": result["n_frames"], "embodiment": embodiment,
+          "segments": labeled}
     out_root.mkdir(parents=True, exist_ok=True)
     (out_root / f"{slug}.json").write_text(json.dumps(out, indent=2))
     return out
 
 
 class DebugBudget:
+    """Thread-safe: episodes run concurrently under the vllm_endpoint
+    backend, so decrementing must be atomic or the budget miscounts."""
+
     def __init__(self, n):
         self.n = n
+        self.lock = threading.Lock()
 
     def pop(self):
-        if self.n > 0:
-            self.n -= 1
-            return True
-        return False
+        with self.lock:
+            if self.n > 0:
+                self.n -= 1
+                return True
+            return False
 
 
 def main():
@@ -252,9 +311,16 @@ def main():
     else:
         ap.error("give --episodes or --sample")
 
-    model, processor = load_model(cfg["paths"]["model_path"],
-                                  cfg["model"]["attn_implementation"],
-                                  cfg["model"]["dtype"])
+    if cfg["vlm"]["backend"] == "vllm_endpoint":
+        from labeling_vlm_backend import check_vlm_endpoint
+        check_vlm_endpoint(cfg)
+        backend = ("vllm_endpoint", EndpointBackend(cfg))
+    else:
+        from model_backend import load_model
+        model, processor = load_model(cfg["paths"]["model_path"],
+                                      cfg["model"]["attn_implementation"],
+                                      cfg["model"]["dtype"])
+        backend = ("transformers", model, processor)
     debug_budget = DebugBudget(cfg["level2_labeling"]["debug_first_n"])
 
     for p in paths:
@@ -262,7 +328,7 @@ def main():
         if out_file.exists() and not args.force:
             print(f"skip (exists): {episode_id(p)}")
             continue
-        out = process_episode(model, processor, p, cfg, debug_budget)
+        out = process_episode(backend, p, cfg, debug_budget)
         print(f"{out['episode_id']}: {len(out['segments'])} segments labeled")
 
 

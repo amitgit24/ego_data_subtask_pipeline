@@ -1,0 +1,113 @@
+{
+  "episode_id": "add_remove_lid/165",
+  "task": "Place the lid onto the cup while sitting at a wooden table with a brown background.",
+  "fps": 30.0,
+  "n_frames": 141,
+  "embodiment": "arm",
+  "generate_params": {
+    "model_frames": 48,
+    "frame_skip": 0
+  },
+  "num_windows": 3,
+  "n_candidates": 6,
+  "n_stitched": 6,
+  "wall_sec": 52.8,
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": 17,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "idle",
+        "hand": "both",
+        "object": "two white paper cups and two white lids on a yellow table",
+        "subtask": "Both arms are idle with hands resting near the lids on the table.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 17,
+      "end_frame": 26,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "grasp",
+        "hand": "both",
+        "object": "the round white lid near the left cup",
+        "subtask": "Both arms grasp the round white lid near the left cup.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 26,
+      "end_frame": 74,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "place",
+        "hand": "both",
+        "object": "the round white lid",
+        "subtask": "Both arms place the round white lid onto the leftmost cup.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 78,
+      "end_frame": 95,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "retract",
+        "hand": "both",
+        "object": "the round white lid",
+        "subtask": "Both arms retract from the leftmost cup after placing the lid.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 96,
+      "end_frame": 132,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "place",
+        "hand": "both",
+        "object": "round white lid",
+        "subtask": "Both arms place the round white lid onto the rightmost cup.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 132,
+      "end_frame": 140,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "retract",
+        "hand": "both",
+        "object": "round white lid",
+        "subtask": "Both arms retract from the rightmost cup after placing the lid.",
+        "confidence": "high"
+      }
+    }
+  ]
+}

@@ -30,8 +30,10 @@ CLI:
 """
 
 import argparse
+import base64
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -41,11 +43,14 @@ from qwen_vl_utils import process_vision_info
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (ACTION_GROUPS, ACTIONS, CONFIDENCES, HANDS,  # noqa: E402
-                    STYLE_RULES, episode_id, episode_slug, load_config,
-                    resolve_description, sample_episodes)
+                    STYLE_RULES, apply_task_overrides, embodiment_for,
+                    episode_id, episode_slug, extract_keyframes, load_config,
+                    load_task_config, resolve_description, sample_episodes,
+                    select_prompt_hint)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from model_backend import load_model, probe_video  # noqa: E402
+from model_backend import probe_video  # noqa: E402
+from vlm_backend import EndpointBackend  # noqa: E402
 
 CONF_RANK = {"high": 2, "medium": 1, "low": 0}
 
@@ -99,12 +104,14 @@ def plan_windows(total_frames, model_frames, frame_skip, overlap_frac):
     return windows
 
 
-def build_prompt(task, frame_entries, total_frames, story):
+def build_prompt(task, frame_entries, total_frames, story, task_hint=None,
+                 embodiment="hand"):
     frame_lines = "\n".join(
         f"  Frame {fr}: t={t:.2f}s" for fr, t in frame_entries)
     first, last = frame_entries[0][0], frame_entries[-1][0]
     hand_line = ", ".join(HANDS)
     story_block = story or "(this is the first window — no subtasks yet)"
+    hint_block = f"\nTask-specific guidance: {task_hint.strip()}\n" if task_hint else ""
 
     return f"""You are annotating an egocentric human manipulation video by
 splitting it into consecutive SUBTASKS and labeling each one, all in a single
@@ -113,7 +120,7 @@ place, retract, hold, idle, ...), bounded by the frames where the hand-object
 interaction state changes.
 
 Overall task for the WHOLE video: "{task}"
-
+{hint_block}
 Story so far (subtasks already decided in earlier windows — DO NOT re-number or
 repeat these; continue after them, and keep object/action wording consistent):
 {story_block}
@@ -126,15 +133,28 @@ Report every subtask that STARTS or is ONGOING within this window. For each:
 - start_frame / end_frame: ABSOLUTE frame numbers from the list above. If a
   subtask continues from the story-so-far, start it at that earlier frame; if
   it is still ongoing at the end of this window, set end_frame to the last
-  frame shown and "ongoing": true.
+  frame shown and "ongoing": true. A subtask ENDS at the moment the object is
+  released/placed/let go — the hand then travelling back empty toward the
+  next object is the START of the NEXT subtask (reach/retract), never the
+  tail of the one just finished.
 - action: EXACTLY ONE of these words (never a group/category name such as
   "object_state"):
   {", ".join(ACTIONS)}
   (grouped below only to help you choose — answer with a single word):
 {taxonomy_block()}
-- hand: one of: {hand_line}
+- hand: one of: {hand_line}. Pick the SINGLE hand ("left"/"right") if only
+  one hand is actively manipulating the object, even if the other hand is
+  visible in frame resting, idle, or merely nearby without gripping
+  anything. Use "both" only when both hands are each independently
+  manipulating (e.g. one steadies the cup while the other places the lid).
+  Use "both_coordinating" only when both hands are working AS ONE unit on
+  the same grip/motion (e.g. passing an object hand-to-hand, or both hands
+  gripping one object together). A hand merely being in frame is not
+  evidence it is acting.
 - object: short noun phrase with one visible attribute.
-- subtask: {STYLE_RULES}
+- subtask: {STYLE_RULES} Call the end-effector "{embodiment}" (e.g. "left
+  {embodiment}", "both {embodiment}s") in every sentence, even if a style
+  example shows a different word.
 - confidence: high | medium | low
 
 Do not invent subtasks; if the hands are merely idle, say so with action "idle".
@@ -143,8 +163,9 @@ Return ONLY a JSON object, no prose, no code fences:
 
 
 @torch.inference_mode()
-def generate_window(model, processor, video_path, w_start, w_end, model_frames,
-                    fps, total_frames, task, story, v):
+def generate_window_transformers(model, processor, video_path, w_start, w_end,
+                                 model_frames, fps, total_frames, task, story,
+                                 v, task_hint=None, embodiment="hand"):
     # qwen_vl_utils derives the available frame count from the TIME range
     # (video_start/video_end * fps) with its own rounding, which can come out
     # one LESS than w_end - w_start + 1 on a tail window — decord then rejects
@@ -167,7 +188,8 @@ def generate_window(model, processor, video_path, w_start, w_end, model_frames,
     _, meta = videos_probe[0]
     frame_entries = [(int(i), float(i) / fps) for i in meta["frames_indices"]]
 
-    prompt = build_prompt(task, frame_entries, total_frames, story)
+    prompt = build_prompt(task, frame_entries, total_frames, story,
+                          task_hint, embodiment)
     messages = [{"role": "user",
                 "content": [video_content, {"type": "text", "text": prompt}]}]
     text = processor.apply_chat_template(messages, tokenize=False,
@@ -185,6 +207,101 @@ def generate_window(model, processor, video_path, w_start, w_end, model_frames,
         temperature=v["temperature"], repetition_penalty=v["repetition_penalty"])
     trimmed = generated[:, inputs.input_ids.shape[1]:]
     out_text = processor.batch_decode(trimmed, skip_special_tokens=True)[0]
+    parsed = tolerant_json(out_text)
+    return parsed.get("subtasks") or [], out_text
+
+
+def select_window_frames(w_start, w_end, stride, model_frames, keyframes_per_window):
+    """Candidate grid (same span/stride the transformers backend would see),
+    evenly subsampled down to keyframes_per_window actual images -- always
+    keeping the first and last candidate so the window's boundary frames are
+    never dropped."""
+    candidates = list(range(w_start, w_end + 1, stride))[:model_frames]
+    if len(candidates) <= keyframes_per_window:
+        return candidates
+    step = (len(candidates) - 1) / (keyframes_per_window - 1)
+    idxs = sorted({round(i * step) for i in range(keyframes_per_window)})
+    return [candidates[i] for i in idxs]
+
+
+def build_prompt_content(task, frame_data, total_frames, story, task_hint,
+                         embodiment):
+    """OpenAI-format content list (text + interleaved images) for the
+    vllm_endpoint backend -- same instructions as build_prompt(), addressed
+    to explicit keyframe images instead of a native video blob."""
+    hand_line = ", ".join(HANDS)
+    story_block = story or "(this is the first window — no subtasks yet)"
+    hint_block = f"\nTask-specific guidance: {task_hint.strip()}\n" if task_hint else ""
+    first, last = frame_data[0][0], frame_data[-1][0]
+
+    content = [{"type": "text", "text": f"""You are annotating an egocentric human manipulation video by
+splitting it into consecutive SUBTASKS and labeling each one, all in a single
+pass. A subtask is one atomic phase of manipulation (approach, grasp, remove,
+place, retract, hold, idle, ...), bounded by the frames where the hand-object
+interaction state changes.
+
+Overall task for the WHOLE video: "{task}"
+{hint_block}
+Story so far (subtasks already decided in earlier windows — DO NOT re-number or
+repeat these; continue after them, and keep object/action wording consistent):
+{story_block}
+
+You are shown {len(frame_data)} keyframes sampled from ONE WINDOW: source
+frames {first} to {last} (of {total_frames} total), in chronological order,
+each labeled with its absolute source frame number and timestamp."""}]
+    for frame, tag, path in frame_data:
+        content.append({"type": "text", "text": f"Frame {frame}: t={tag}"})
+        b64 = base64.b64encode(Path(path).read_bytes()).decode()
+        content.append({"type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+
+    content.append({"type": "text", "text": f"""
+Report every subtask that STARTS or is ONGOING within this window. For each:
+- start_frame / end_frame: ABSOLUTE frame numbers from the frames shown above.
+  If a subtask continues from the story-so-far, start it at that earlier
+  frame; if it is still ongoing at the end of this window, set end_frame to
+  the last frame shown and "ongoing": true. A subtask ENDS at the moment the
+  object is released/placed/let go — the hand then travelling back empty
+  toward the next object is the START of the NEXT subtask (reach/retract),
+  never the tail of the one just finished.
+- action: EXACTLY ONE of these words (never a group/category name such as
+  "object_state"):
+  {", ".join(ACTIONS)}
+  (grouped below only to help you choose — answer with a single word):
+{taxonomy_block()}
+- hand: one of: {hand_line}. Pick the SINGLE hand ("left"/"right") if only
+  one hand is actively manipulating the object, even if the other hand is
+  visible in frame resting, idle, or merely nearby without gripping
+  anything. Use "both" only when both hands are each independently
+  manipulating (e.g. one steadies the cup while the other places the lid).
+  Use "both_coordinating" only when both hands are working AS ONE unit on
+  the same grip/motion (e.g. passing an object hand-to-hand, or both hands
+  gripping one object together). A hand merely being in frame is not
+  evidence it is acting.
+- object: short noun phrase with one visible attribute.
+- subtask: {STYLE_RULES} Call the end-effector "{embodiment}" (e.g. "left
+  {embodiment}", "both {embodiment}s") in every sentence, even if a style
+  example shows a different word.
+- confidence: high | medium | low
+
+Do not invent subtasks; if the hands are merely idle, say so with action "idle".
+Respond ONLY with JSON matching the schema."""})
+    return content
+
+
+def generate_window_vllm(backend, video_path, w_start, w_end, model_frames,
+                         frame_skip, fps, total_frames, task, story,
+                         task_hint, embodiment, keyframes_per_window,
+                         keyframe_size, kf_out_dir, window_index):
+    stride = frame_skip + 1
+    frames = select_window_frames(w_start, w_end, stride, model_frames,
+                                  keyframes_per_window)
+    frame_tags = [(f, f"{f / fps:.2f}s") for f in frames]
+    kf = extract_keyframes(video_path, frame_tags, keyframe_size,
+                           kf_out_dir, window_index)
+    content = build_prompt_content(task, kf, total_frames, story, task_hint,
+                                   embodiment)
+    out_text = backend.generate(content)
     parsed = tolerant_json(out_text)
     return parsed.get("subtasks") or [], out_text
 
@@ -310,13 +427,23 @@ def story_text(segments, n_context):
 
 # ------------------------------------------------------------------ episode
 
-def process_episode(model, processor, h5_path, cfg, debug_budget=None):
+def process_episode(backend, h5_path, cfg, debug_budget=None):
+    """backend: ("transformers", model, processor) or ("vllm_endpoint", EndpointBackend)."""
+    task_name = h5_path.parent.name
+    cfg = apply_task_overrides(cfg, task_name)
     v = cfg["generate"]
     with h5py.File(h5_path, "r") as f:
-        task = resolve_description(dict(f.attrs), cfg)
+        attrs = dict(f.attrs)
+        task = resolve_description(attrs, cfg)
+    task_cfg = load_task_config(task_name)
+    task_hint = select_prompt_hint(task_cfg, attrs)
+    embodiment = embodiment_for(episode_id(h5_path))
     video_path = h5_path.with_suffix(".mp4")
     duration, fps = probe_video(video_path, cfg["video"]["fps_fallback"])
     total_frames = int(round(duration * fps))
+    slug = episode_slug(h5_path)
+    out_root = Path(cfg["paths"]["output_dir"])
+    kf_dir = out_root / "labels" / "keyframes" / slug
 
     windows = plan_windows(total_frames, v["model_frames"], v["frame_skip"],
                            v["overlap_frac"])
@@ -329,9 +456,20 @@ def process_episode(model, processor, h5_path, cfg, debug_budget=None):
         raw = None
         for attempt in range(1, v["max_retries"] + 1):
             try:
-                subs, raw = generate_window(
-                    model, processor, video_path, w_start, w_end,
-                    v["model_frames"], fps, total_frames, task, story, v)
+                if backend[0] == "transformers":
+                    _, model, processor = backend
+                    subs, raw = generate_window_transformers(
+                        model, processor, video_path, w_start, w_end,
+                        v["model_frames"], fps, total_frames, task, story, v,
+                        task_hint, embodiment)
+                else:
+                    _, endpoint = backend
+                    subs, raw = generate_window_vllm(
+                        endpoint, video_path, w_start, w_end,
+                        v["model_frames"], v["frame_skip"], fps, total_frames,
+                        task, story, task_hint, embodiment,
+                        cfg["vlm"]["keyframes_per_window"],
+                        cfg["vlm"]["keyframe_size"], kf_dir, wi)
                 break
             except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
                 if attempt < v["max_retries"]:
@@ -355,7 +493,7 @@ def process_episode(model, processor, h5_path, cfg, debug_budget=None):
     segments = to_record_segments(stitched)
 
     record = {"episode_id": episode_id(h5_path), "task": task, "fps": fps,
-              "n_frames": total_frames,
+              "n_frames": total_frames, "embodiment": embodiment,
               "generate_params": {k: v[k] for k in
                                   ("model_frames", "frame_skip", "overlap_frac")},
               "num_windows": len(windows),
@@ -365,8 +503,6 @@ def process_episode(model, processor, h5_path, cfg, debug_budget=None):
               "wall_sec": round(time.time() - t0, 1),
               "segments": segments}
 
-    out_root = Path(cfg["paths"]["output_dir"])
-    slug = episode_slug(h5_path)
     (out_root / "labels").mkdir(parents=True, exist_ok=True)
     (out_root / "labels" / f"{slug}.json").write_text(json.dumps(record, indent=2))
     # a boundaries.json mirror for the verifier / cross-pipeline comparison
@@ -393,14 +529,19 @@ def process_episode(model, processor, h5_path, cfg, debug_budget=None):
 
 
 class DebugBudget:
+    """Thread-safe: episodes now run concurrently under the vllm_endpoint
+    backend, so decrementing must be atomic or the budget miscounts."""
+
     def __init__(self, n):
         self.n = n
+        self.lock = threading.Lock()
 
     def pop(self):
-        if self.n > 0:
-            self.n -= 1
-            return True
-        return False
+        with self.lock:
+            if self.n > 0:
+                self.n -= 1
+                return True
+            return False
 
 
 def main():
@@ -422,16 +563,24 @@ def main():
     else:
         ap.error("give --episodes or --sample")
 
-    model, processor = load_model(cfg["paths"]["model_path"],
-                                  cfg["model"]["attn_implementation"],
-                                  cfg["model"]["dtype"])
+    if cfg["vlm"]["backend"] == "vllm_endpoint":
+        from vlm_backend import check_vlm_endpoint
+        check_vlm_endpoint(cfg)
+        backend = ("vllm_endpoint", EndpointBackend(cfg))
+    else:
+        from model_backend import load_model
+        model, processor = load_model(cfg["paths"]["model_path"],
+                                      cfg["model"]["attn_implementation"],
+                                      cfg["model"]["dtype"])
+        backend = ("transformers", model, processor)
+
     debug_budget = DebugBudget(cfg["generate"]["debug_first_n"])
     for p in paths:
         out_file = out_root / f"{episode_slug(p)}.json"
         if out_file.exists() and not args.force:
             print(f"skip (exists): {episode_id(p)}")
             continue
-        rec = process_episode(model, processor, p, cfg, debug_budget)
+        rec = process_episode(backend, p, cfg, debug_budget)
         print(f"{rec['episode_id']}: {rec['num_windows']} windows -> "
               f"{len(rec['segments'])} segments")
 

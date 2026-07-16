@@ -52,6 +52,7 @@ episode_slug = _kin_common.episode_slug
 list_tasks = _kin_common.list_tasks
 resolve_description = _kin_common.resolve_description
 sample_episodes = _kin_common.sample_episodes
+select_prompt_hint = _kin_common.select_prompt_hint
 
 ACTION_GROUPS = _kin_taxonomy.ACTION_GROUPS
 ACTIONS = _kin_taxonomy.ACTIONS
@@ -60,8 +61,40 @@ HANDS = _kin_taxonomy.HANDS
 STYLES = _kin_taxonomy.STYLES
 STYLE_RULES = _kin_taxonomy.STYLE_RULES
 style_for = _kin_taxonomy.style_for
+embodiment_for = _kin_taxonomy.embodiment_for
+
+# THIS pipeline's own per-task tuning dir (one file per task, created only
+# when a task needs tuning; absent file = untouched defaults). Same design
+# as the two sibling pipelines, but a separate directory and separate hint
+# text: this pipeline's Level 1 prompt (find transitions in a dense window)
+# and Level 2 prompt (label one already-known segment) are shaped
+# differently from the siblings' prompts, so hints must be written for
+# THIS pipeline's actual prompt structure, not copy-pasted.
+TASK_CONFIGS_DIR = HERE / "task_configs"
 
 
 def load_config(path=None):
     with open(path or CONFIG_PATH) as f:
         return yaml.safe_load(f)
+
+
+def load_task_config(task_name):
+    """pipeline/task_configs/<task_name>.yaml -> dict, or {} if absent."""
+    return _kin_common.load_task_config(task_name, dir_path=TASK_CONFIGS_DIR)
+
+
+def apply_task_overrides(cfg, task_name, task_cfg=None):
+    """Merge a task's `level1_transitions:`/`level2_labeling:` blocks over
+    the global ones. Returns cfg unchanged (same object) when the task has
+    no file. Learned from the sibling pipelines: EVERY stage that reads
+    these blocks (Level 1, Level 2, AND Level 3's min-length assert) must
+    go through this, or L3 rejects segments L1/L2 legitimately produced
+    under a different setting."""
+    task_cfg = load_task_config(task_name) if task_cfg is None else task_cfg
+    if not task_cfg:
+        return cfg
+    merged = dict(cfg)
+    for block in ("level1_transitions", "level2_labeling"):
+        if block in task_cfg:
+            merged[block] = {**cfg[block], **task_cfg[block]}
+    return merged

@@ -1,0 +1,93 @@
+{
+  "episode_id": "add_remove_lid/165",
+  "n_frames": 141,
+  "fps": 30.0,
+  "num_windows": 3,
+  "boundaries": [
+    {
+      "frame": 0,
+      "time": 0.0,
+      "source": "episode_start"
+    },
+    {
+      "frame": 17,
+      "time": 0.5667,
+      "source": "vlm_subtask"
+    },
+    {
+      "frame": 26,
+      "time": 0.8667,
+      "source": "vlm_subtask"
+    },
+    {
+      "frame": 78,
+      "time": 2.6,
+      "source": "vlm_subtask"
+    },
+    {
+      "frame": 96,
+      "time": 3.2,
+      "source": "vlm_subtask"
+    },
+    {
+      "frame": 132,
+      "time": 4.4,
+      "source": "vlm_subtask"
+    },
+    {
+      "frame": 140,
+      "time": 4.6667,
+      "source": "episode_end"
+    }
+  ],
+  "segments": [
+    {
+      "id": 0,
+      "start_frame": 0,
+      "end_frame": 17,
+      "start_time": 0.0,
+      "end_time": 0.5667,
+      "duration": 0.5667
+    },
+    {
+      "id": 1,
+      "start_frame": 17,
+      "end_frame": 26,
+      "start_time": 0.5667,
+      "end_time": 0.8667,
+      "duration": 0.3
+    },
+    {
+      "id": 2,
+      "start_frame": 26,
+      "end_frame": 74,
+      "start_time": 0.8667,
+      "end_time": 2.4667,
+      "duration": 1.6
+    },
+    {
+      "id": 3,
+      "start_frame": 78,
+      "end_frame": 95,
+      "start_time": 2.6,
+      "end_time": 3.1667,
+      "duration": 0.5667
+    },
+    {
+      "id": 4,
+      "start_frame": 96,
+      "end_frame": 132,
+      "start_time": 3.2,
+      "end_time": 4.4,
+      "duration": 1.2
+    },
+    {
+      "id": 5,
+      "start_frame": 132,
+      "end_frame": 140,
+      "start_time": 4.4,
+      "end_time": 4.6667,
+      "duration": 0.2667
+    }
+  ]
+}

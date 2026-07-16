@@ -1,14 +1,25 @@
-"""End-to-end pipeline driver for the Qwen-direct pipeline.
+"""End-to-end pipeline driver for the VLM-direct (transitions -> labeling)
+pipeline.
 
     python run_pipeline.py --episodes <all | N_random | task/idx [...]>
                            [--levels 1,2,3] [--force] [--verify-only]
 
-Unlike Kinematics_pipeline's driver, Levels 1 and 2 both need the (large,
-slow-to-load) local Qwen3-VL model in-process — there is no vLLM server to
-share. When both are requested together, the model is loaded ONCE and both
-levels run in a single Python process per episode, instead of paying the
-weight-load cost twice by subprocessing each level separately. Level 3 has
-no model and runs as a lightweight subprocess, same as Kinematics_pipeline.
+Levels 1 and 2 both need Qwen3-VL, via one of two backends
+(cfg["vlm"]["backend"]):
+  - vllm_endpoint (default, since 2026-07-15): talks to a vLLM server over
+    HTTP, same pattern as the sibling pipelines — episodes run CONCURRENTLY
+    (cfg["vlm"]["concurrency"] workers). Within one episode, Level 1's
+    windows and Level 2's segments both stay sequential (Level 2 labels
+    segments in order so each prompt carries the story so far). Only one
+    Qwen3-VL-32B should be resident on the GPU at a time — stop any other
+    pipeline's server/process holding the model first.
+  - transformers: loads the model in-process once, generates sequentially,
+    episode by episode, no batching (the original implementation; much
+    slower, kept as a fallback / for A-B comparison against the endpoint
+    backend). Still loads the model ONCE and runs both levels in one
+    process per episode, exactly as before.
+Level 3 has no model and runs as a lightweight subprocess, same as
+Kinematics_pipeline.
 
 Levels are resumable: each level skips episodes whose output already exists
 (unless --force).
@@ -17,6 +28,7 @@ Levels are resumable: each level skips episodes whose output already exists
 import argparse
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from common import episode_id, episode_slug, load_config, sample_episodes
@@ -42,11 +54,9 @@ def run_subprocess(module_dir, script, extra):
 
 
 def run_levels_1_2(paths, cfg, force):
-    """Load the model once, run Level 1 (if its output is missing) and
-    Level 2 for each episode in this single process."""
+    """Run Level 1 (if its output is missing) and Level 2 for each episode."""
     sys.path.insert(0, str(ROOT / "level1_transitions"))
     sys.path.insert(0, str(ROOT / "level2_labeling"))
-    from model_backend import load_model
     from detect_transitions import process_episode as detect_boundaries
     from label_segments import DebugBudget
     from label_segments import process_episode as label_episode
@@ -55,33 +65,69 @@ def run_levels_1_2(paths, cfg, force):
     labels_dir = Path(cfg["paths"]["output_dir"]) / "labels"
     boundaries_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n>>> loading {cfg['paths']['model_path']} ...")
-    model, processor = load_model(cfg["paths"]["model_path"],
-                                  cfg["model"]["attn_implementation"],
-                                  cfg["model"]["dtype"])
-    debug_budget = DebugBudget(cfg["level2_labeling"]["debug_first_n"])
-
-    done, failed = 0, []
+    todo = [p for p in paths
+           if force or not (labels_dir / f"{episode_slug(p)}.json").exists()]
     for p in paths:
-        label_file = labels_dir / f"{episode_slug(p)}.json"
-        if label_file.exists() and not force:
+        if p not in todo:
             print(f"skip (labels exist): {episode_id(p)}")
-            continue
-        try:
-            bfile = boundaries_dir / f"{episode_slug(p)}.json"
-            if not bfile.exists() or force:
-                import json
-                result = detect_boundaries(model, processor, p, cfg)
-                bfile.write_text(json.dumps(result, indent=2))
-                print(f"  L1 {result['episode_id']}: {result['n_frames']} frames "
-                     f"-> {len(result['segments'])} segments")
-            out = label_episode(model, processor, p, cfg, debug_budget)
-            done += 1
-            print(f"[{done}] L2 {out['episode_id']}: {len(out['segments'])} "
-                 f"segments labeled")
-        except Exception as e:
-            failed.append((episode_id(p), repr(e)))
-            print(f"FAILED {episode_id(p)}: {e!r}", file=sys.stderr)
+
+    debug_budget = DebugBudget(cfg["level2_labeling"]["debug_first_n"])
+    done, failed = 0, []
+
+    def _run_one(p, l1_backend, l2_backend):
+        import json
+        bfile = boundaries_dir / f"{episode_slug(p)}.json"
+        if not bfile.exists() or force:
+            result = detect_boundaries(l1_backend, p, cfg)
+            bfile.write_text(json.dumps(result, indent=2))
+            print(f"  L1 {result['episode_id']}: {result['n_frames']} frames "
+                 f"-> {len(result['segments'])} segments")
+        return label_episode(l2_backend, p, cfg, debug_budget)
+
+    if cfg["vlm"]["backend"] == "vllm_endpoint":
+        from transitions_vlm_backend import EndpointBackend as L1Backend
+        from transitions_vlm_backend import check_vlm_endpoint
+        from labeling_vlm_backend import EndpointBackend as L2Backend
+        print(f"\n>>> checking vLLM endpoint {cfg['vlm']['endpoint_url']} ...")
+        check_vlm_endpoint(cfg)
+        # Level 1 and Level 2 are guided-JSON-decoded against DIFFERENT
+        # schemas (transitions array vs. single action/hand/object/
+        # subtask/confidence) -- each needs its OWN EndpointBackend
+        # instance (schema is bound at construction). Sharing one silently
+        # forces every response into whichever schema won, with no error
+        # (found the hard way: Level 1 calls came back with zero
+        # transitions, every time, because the shared backend was
+        # Level-2-shaped).
+        l1_backend = ("vllm_endpoint", L1Backend(cfg))
+        l2_backend = ("vllm_endpoint", L2Backend(cfg))
+        with ThreadPoolExecutor(max_workers=cfg["vlm"]["concurrency"]) as pool:
+            futures = {pool.submit(_run_one, p, l1_backend, l2_backend): p
+                      for p in todo}
+            for fut, p in futures.items():
+                try:
+                    out = fut.result()
+                    done += 1
+                    print(f"[{done}] L2 {out['episode_id']}: "
+                         f"{len(out['segments'])} segments labeled")
+                except Exception as e:
+                    failed.append((episode_id(p), repr(e)))
+                    print(f"FAILED {episode_id(p)}: {e!r}", file=sys.stderr)
+    else:
+        from model_backend import load_model
+        print(f"\n>>> loading {cfg['paths']['model_path']} ...")
+        model, processor = load_model(cfg["paths"]["model_path"],
+                                      cfg["model"]["attn_implementation"],
+                                      cfg["model"]["dtype"])
+        backend = ("transformers", model, processor)
+        for p in todo:
+            try:
+                out = _run_one(p, backend, backend)
+                done += 1
+                print(f"[{done}] L2 {out['episode_id']}: "
+                     f"{len(out['segments'])} segments labeled")
+            except Exception as e:
+                failed.append((episode_id(p), repr(e)))
+                print(f"FAILED {episode_id(p)}: {e!r}", file=sys.stderr)
 
     print(f"\n{done} episodes labeled, {len(failed)} failed")
     if failed:

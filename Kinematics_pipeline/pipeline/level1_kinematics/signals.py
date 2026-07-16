@@ -89,13 +89,21 @@ def compute_signals(h5_path, cfg):
             thumb = f[thumb_key][:, :3, 3].astype(np.float64)
             index = f[index_key][:, :3, 3].astype(np.float64)
 
-            valid = (joint_validity(f, wrist_key, conf_min)
-                     & joint_validity(f, thumb_key, conf_min)
-                     & joint_validity(f, index_key, conf_min))
+            # Validity is per SIGNAL, not per hand: wrist speed only needs
+            # the wrist tracked; aperture only needs the two fingertips.
+            # Fingertips lose confidence for long stretches exactly while
+            # the hand manipulates an object (occlusion) — measured 60-77%
+            # invalid on add_remove_lid — while the wrist stays >92% valid.
+            # A combined wrist&fingertip mask silenced pause detection (a
+            # wrist-only signal) during every placement, which is where the
+            # true boundaries live.
+            valid_wrist = joint_validity(f, wrist_key, conf_min)
+            valid_pinch = (joint_validity(f, thumb_key, conf_min)
+                           & joint_validity(f, index_key, conf_min))
 
-            wrist, bad_w = _interp_gaps(wrist, valid, k["max_gap_interp"])
-            thumb, bad_t = _interp_gaps(thumb, valid, k["max_gap_interp"])
-            index, bad_i = _interp_gaps(index, valid, k["max_gap_interp"])
+            wrist, bad_w = _interp_gaps(wrist, valid_wrist, k["max_gap_interp"])
+            thumb, bad_t = _interp_gaps(thumb, valid_pinch, k["max_gap_interp"])
+            index, bad_i = _interp_gaps(index, valid_pinch, k["max_gap_interp"])
             masked = bad_w | bad_t | bad_i
             masked_any |= masked
 
@@ -104,6 +112,8 @@ def compute_signals(h5_path, cfg):
             out[f"aperture_{side}"] = aperture
             out[f"aperture_vel_{side}"] = np.gradient(aperture) * fps
             out[f"masked_{side}"] = masked
+            out[f"masked_wrist_{side}"] = bad_w
+            out[f"masked_pinch_{side}"] = bad_t | bad_i
             out[f"wrist_pos_{side}"] = wrist  # world frame, gaps interpolated
 
         cam = f[h["camera_pose"]][:].astype(np.float64)

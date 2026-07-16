@@ -1,0 +1,47 @@
+# Task-specific tuning for add_remove_lid in the single-pass VLM pipeline.
+# One file per task; a task with no file uses config.yaml defaults untouched.
+# Self-contained; cross-task comparisons live in the pipeline notes, not here.
+#
+# Everything below encodes what 5 human-review rounds on the Kinematics
+# sibling established for this task: per-cup decomposition (one
+# reach/place/retract cycle per cup, cup named by position), boundaries cut
+# at the moment the lid is released (the hand tracing back afterwards is the
+# START of the next subtask, never the tail of the finished one), direction
+# taken from the episode's resolved instruction, and no hinge/slide framing
+# (the lid is a free object, this task is in a hinged-mechanism category by
+# name only).
+
+# Direction: attrs['which_llm_description'] == "1" -> add, "2" -> remove.
+# Verified across all 2,565 episodes: 100% classify cleanly (1,295 add /
+# 1,270 remove). The two directions are different motions, so different
+# hints.
+prompt_hint_by_attr: which_llm_description
+prompt_hints:
+  "1": >
+    This video ADDS lid(s) onto cup(s): every lid starts loose on the table.
+    Expect per cup, in order: reach for the loose lid -> grasp -> (align if
+    visible) -> place it onto the cup -> retract the empty hands. Each of
+    those phases is its own subtask, and EACH CUP gets its own cycle — never
+    cover two cups with one subtask. End a place subtask at the moment the
+    lid is seated and released; the hands travelling back empty afterwards
+    is a separate retract/reach subtask that belongs to the NEXT cup's
+    cycle, not to the placement just finished. The lid is a small free
+    object, not a hinged or sliding mechanism — use
+    reach/grasp/pick/align/place/release/retract verbs, not
+    push/pull/slide. When more than one cup is visible, name the cup being
+    worked on by its position (e.g. "the second cup from the left", "the
+    rightmost cup") in the subtask sentence.
+  "2": >
+    This video REMOVES lid(s) from cup(s): every lid starts seated on a cup.
+    Expect per cup, in order: reach for the lid on the cup -> grasp ->
+    lift/pull it clear -> set it down on the table -> retract the empty
+    hands. Each of those phases is its own subtask, and EACH CUP gets its
+    own cycle — never cover two cups with one subtask. End a remove/put-down
+    subtask at the moment the lid is set down and released; the hands
+    travelling back empty afterwards is a separate retract/reach subtask
+    that belongs to the NEXT cup's cycle. The lid is a small free object,
+    not a hinged or sliding mechanism — use
+    reach/grasp/remove/lift/put_down/release/retract verbs, not
+    push/pull/slide. When more than one cup is visible, name the cup being
+    worked on by its position (e.g. "the second cup from the left", "the
+    rightmost cup") in the subtask sentence.

@@ -1,0 +1,241 @@
+{
+  "episode_id": "add_remove_lid/946",
+  "task": "Add a lid onto a cup placed on a wooden table while sitting against a brown background.",
+  "fps": 30.0,
+  "n_frames": 261,
+  "embodiment": "hand",
+  "generate_params": {
+    "model_frames": 48,
+    "frame_skip": 0
+  },
+  "num_windows": 6,
+  "n_candidates": 14,
+  "n_stitched": 14,
+  "wall_sec": 116.1,
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": 13,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "idle",
+        "hand": "both",
+        "object": "four white paper cups and four white lids on a wooden table",
+        "subtask": "Both hands are idle above the table with four white paper cups and four white lids arranged in front.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 13,
+      "end_frame": 26,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "reach",
+        "hand": "right",
+        "object": "the third lid from the left",
+        "subtask": "Right hand reaches toward the third lid from the left on the wooden table.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 26,
+      "end_frame": 30,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "grasp",
+        "hand": "right",
+        "object": "the third lid from the left",
+        "subtask": "Right hand grasps the third lid from the left on the wooden table.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 30,
+      "end_frame": 34,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "lift",
+        "hand": "right",
+        "object": "the third lid from the left",
+        "subtask": "Right hand lifts the third lid from the left off the wooden table.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 34,
+      "end_frame": 65,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "place",
+        "hand": "both",
+        "object": "the third lid from the left",
+        "subtask": "Both hands place the third lid from the left onto the third cup from the left.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 69,
+      "end_frame": 74,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "retract",
+        "hand": "both",
+        "object": "empty hands",
+        "subtask": "Both hands retract from the third cup after placing the lid.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 78,
+      "end_frame": 86,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "grasp",
+        "hand": "both",
+        "object": "the leftmost lid",
+        "subtask": "Both hands grasp the leftmost lid on the wooden table.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 86,
+      "end_frame": 130,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "place",
+        "hand": "both",
+        "object": "the leftmost lid",
+        "subtask": "Both hands place the leftmost lid onto the leftmost cup.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 134,
+      "end_frame": 148,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "reach",
+        "hand": "right",
+        "object": "the second lid from the left",
+        "subtask": "Right hand reaches for the second lid from the left on the wooden table.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 148,
+      "end_frame": 153,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "grasp",
+        "hand": "both",
+        "object": "the second lid from the left",
+        "subtask": "Both hands grasp the second lid from the left on the wooden table.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 153,
+      "end_frame": 201,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "place",
+        "hand": "both",
+        "object": "the second lid from the left",
+        "subtask": "Both hands place the second lid from the left onto the rightmost cup.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 205,
+      "end_frame": 213,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "grasp",
+        "hand": "both",
+        "object": "the third lid from the left",
+        "subtask": "Both hands grasp the third lid from the left on the wooden table.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 218,
+      "end_frame": 256,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "place",
+        "hand": "both",
+        "object": "the third lid from the left",
+        "subtask": "Both hands place the third lid from the left onto the second cup from the left.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 258,
+      "end_frame": 260,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "retract",
+        "hand": "both",
+        "object": "both hands",
+        "subtask": "Both hands retract from the second cup from the left after placing the lid.",
+        "confidence": "high"
+      }
+    }
+  ]
+}

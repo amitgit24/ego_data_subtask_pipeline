@@ -97,6 +97,52 @@ def category_for_task(task_name, categories, task_map):
     return dict(categories[name], name=name) if name else None
 
 
+TASK_CONFIGS_DIR = CONFIG_PATH.parent / "task_configs"
+
+
+def load_task_config(task_name, dir_path=None):
+    """pipeline/task_configs/<task_name>.yaml -> {kinematics: {...},
+    prompt_hint: ...}, or {} if the task has no file (uses category/global
+    defaults untouched). One file per task — never edit another task's
+    tuning by editing this one."""
+    p = (dir_path or TASK_CONFIGS_DIR) / f"{task_name}.yaml"
+    if not p.exists():
+        return {}
+    with open(p) as f:
+        return yaml.safe_load(f) or {}
+
+
+def select_prompt_hint(task_cfg, attrs):
+    """Pick this task's Level 2 prompt hint, optionally varying by an hdf5
+    attr value — e.g. a reversible task (add_remove_lid) needs a different
+    hint for its two directions, keyed off `which_llm_description`. Task
+    config shape:
+        prompt_hint_by_attr: <attr name>
+        prompt_hints: {<attr value>: <hint text>, ...}
+    Falls back to a flat `prompt_hint`, then None (caller keeps whatever
+    default — usually the category's — it already has)."""
+    by_attr = task_cfg.get("prompt_hint_by_attr")
+    hints = task_cfg.get("prompt_hints")
+    if by_attr and hints:
+        key = str(attrs.get(by_attr))
+        if key in hints:
+            return hints[key]
+    return task_cfg.get("prompt_hint")
+
+
+def apply_task_overrides(cfg, task_name, task_cfg=None):
+    """Return cfg with this task's kinematics overrides merged over the
+    global `kinematics:` block. Returns cfg unchanged (same object) if the
+    task has no config file, so callers can pass the result straight
+    through."""
+    task_cfg = load_task_config(task_name) if task_cfg is None else task_cfg
+    if "kinematics" not in task_cfg:
+        return cfg
+    merged = dict(cfg)
+    merged["kinematics"] = {**cfg["kinematics"], **task_cfg["kinematics"]}
+    return merged
+
+
 def joint_validity(f, joint_key, conf_min):
     """Per-frame validity for a transforms/<joint> dataset.
 

@@ -3,15 +3,28 @@
     python run_pipeline.py --episodes <all | N_random | task/idx [...]>
                            [--levels 1,3] [--force] [--verify-only]
 
-Level 1 (generate_subtasks) needs the large local Qwen3-VL model in-process and
-loads it once for all episodes. Level 3 (assemble) has no model and runs as a
-lightweight subprocess. There is no Level 2: segmentation and labeling are one
-step here, which is the whole point of this pipeline.
+Level 1 (generate_subtasks) needs Qwen3-VL, via one of two backends
+(cfg["vlm"]["backend"]):
+  - vllm_endpoint (default): talks to a vLLM server over HTTP, same pattern
+    as the Kinematics sibling's Level 2 — episodes run CONCURRENTLY
+    (cfg["vlm"]["concurrency"] workers; windows within one episode stay
+    sequential, since each window's prompt depends on the stitched
+    story-so-far of the previous ones). Only one Qwen3-VL-32B should be
+    resident on the GPU at a time — stop any other pipeline's server/process
+    holding the model first.
+  - transformers: loads the model in-process once, generates sequentially,
+    episode by episode, no batching (the original implementation; much
+    slower, kept as a fallback / for A-B comparison against the endpoint
+    backend).
+Level 3 (assemble) has no model and runs as a lightweight subprocess. There is
+no Level 2: segmentation and labeling are one step here, which is the whole
+point of this pipeline.
 """
 
 import argparse
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from common import episode_id, episode_slug, load_config, sample_episodes
@@ -36,30 +49,53 @@ def run_subprocess(module_dir, script, extra):
 
 def run_generate(paths, cfg, force):
     sys.path.insert(0, str(ROOT / "level1_generate"))
-    from model_backend import load_model
     from generate_subtasks import DebugBudget, process_episode
 
     labels_dir = Path(cfg["paths"]["output_dir"]) / "labels"
-    print(f"\n>>> loading {cfg['paths']['model_path']} ...")
-    model, processor = load_model(cfg["paths"]["model_path"],
-                                  cfg["model"]["attn_implementation"],
-                                  cfg["model"]["dtype"])
-    debug_budget = DebugBudget(cfg["generate"]["debug_first_n"])
-
-    done, failed = 0, []
+    todo = [p for p in paths
+           if force or not (labels_dir / f"{episode_slug(p)}.json").exists()]
     for p in paths:
-        out_file = labels_dir / f"{episode_slug(p)}.json"
-        if out_file.exists() and not force:
+        if p not in todo:
             print(f"skip (labels exist): {episode_id(p)}")
-            continue
-        try:
-            rec = process_episode(model, processor, p, cfg, debug_budget)
-            done += 1
-            print(f"[{done}] {rec['episode_id']}: {rec['num_windows']} windows "
-                 f"-> {len(rec['segments'])} segments")
-        except Exception as e:
-            failed.append((episode_id(p), repr(e)))
-            print(f"FAILED {episode_id(p)}: {e!r}", file=sys.stderr)
+
+    debug_budget = DebugBudget(cfg["generate"]["debug_first_n"])
+    done, failed = 0, []
+
+    def _run_one(p, backend):
+        return process_episode(backend, p, cfg, debug_budget)
+
+    if cfg["vlm"]["backend"] == "vllm_endpoint":
+        from vlm_backend import EndpointBackend, check_vlm_endpoint
+        print(f"\n>>> checking vLLM endpoint {cfg['vlm']['endpoint_url']} ...")
+        check_vlm_endpoint(cfg)
+        backend = ("vllm_endpoint", EndpointBackend(cfg))
+        with ThreadPoolExecutor(max_workers=cfg["vlm"]["concurrency"]) as pool:
+            futures = {pool.submit(_run_one, p, backend): p for p in todo}
+            for fut, p in futures.items():
+                try:
+                    rec = fut.result()
+                    done += 1
+                    print(f"[{done}] {rec['episode_id']}: {rec['num_windows']} "
+                         f"windows -> {len(rec['segments'])} segments")
+                except Exception as e:
+                    failed.append((episode_id(p), repr(e)))
+                    print(f"FAILED {episode_id(p)}: {e!r}", file=sys.stderr)
+    else:
+        from model_backend import load_model
+        print(f"\n>>> loading {cfg['paths']['model_path']} ...")
+        model, processor = load_model(cfg["paths"]["model_path"],
+                                      cfg["model"]["attn_implementation"],
+                                      cfg["model"]["dtype"])
+        backend = ("transformers", model, processor)
+        for p in todo:
+            try:
+                rec = _run_one(p, backend)
+                done += 1
+                print(f"[{done}] {rec['episode_id']}: {rec['num_windows']} "
+                     f"windows -> {len(rec['segments'])} segments")
+            except Exception as e:
+                failed.append((episode_id(p), repr(e)))
+                print(f"FAILED {episode_id(p)}: {e!r}", file=sys.stderr)
 
     print(f"\n{done} episodes generated, {len(failed)} failed")
     if failed:

@@ -15,9 +15,11 @@
 # was tuned.
 
 paths:
-  data_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/test
-  output_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/Qwen_direct_pipeline/outputs
-  model_path: /mnt/3466ADC766AD8A66/research_paper/Robointer/models/Qwen3-VL-32B-Instruct
+  # old /mnt/3466ADC766AD8A66/... mount no longer exists on this machine;
+  # repointed 2026-07-15 to match the sibling pipelines' config.yaml.
+  data_dir: /data/egocentric_data/ego_dex_data/ego_dex_data_Extracted/part1/part1
+  output_dir: /data/egocentric_data/ego_data_subtask_pipeline/VLM_seg_subtask_pipeline/outputs
+  model_path: /data/huggingface_cache/hub/models--Qwen--Qwen3-VL-32B-Instruct/snapshots/0cfaf48183f594c314753d30a4c4974bc75f3ccb
 
 # language-annotation resolution — same facts established by Level 0 audit
 # in Kinematics_pipeline (see Kinematics_pipeline/experiments/01_*.md).
@@ -33,21 +35,50 @@ video:
   fps_fallback: 30.0     # only used if a video's fps can't be probed
 
 model:
-  attn_implementation: sdpa   # sdpa | flash_attention_2 | eager
+  attn_implementation: sdpa   # sdpa | flash_attention_2 | eager (transformers backend only)
   dtype: bfloat16
+
+# ---- vLLM-server backend (default) ----
+# Added 2026-07-15, mirroring VLM_subtask_pipeline's identical upgrade: both
+# levels originally loaded Qwen3-VL-32B in-process via transformers and
+# called generate() sequentially, no batching — much slower than talking to
+# a vLLM server, and (for Level 2) meant no guided-JSON decoding, so the
+# closed vocabulary was only enforced post-hoc with retries instead of being
+# impossible to violate. Points at the SAME vLLM server the sibling
+# pipelines use — only one Qwen3-VL-32B should be resident on the GPU at a
+# time. Server must be launched with `--limit-mm-per-prompt
+# '{"image": N}'` where N >= max(level1_transitions.keyframes_per_window,
+# level2_labeling.keyframes_per_segment), and a large enough
+# `--max-model-len` to hold them.
+vlm:
+  backend: vllm_endpoint    # vllm_endpoint | transformers
+  endpoint_url: http://localhost:8000/v1
+  api_key: EMPTY
+  model_name: Qwen3-VL-32B-Instruct
+  concurrency: 4            # parallel EPISODES in flight; within one episode,
+                            # Level 1 windows and Level 2 segments both stay
+                            # sequential (segments are labeled in order so
+                            # each prompt carries the story so far)
 
 # ---- Level 1: VLM transition-frame detection (no kinematics at all) ----
 # Ported from ref_code/segment_transitions.py. The video is walked in
-# non-overlapping windows; EVERY frame in a window is shown to the model as
-# true video input (not a handful of keyframes), so no candidate transition
-# instant is skipped. The model reports only the frame(s) where the
-# hand-object interaction state changes; everything else is a continuation
-# and gets no boundary.
+# non-overlapping windows. transformers backend: EVERY frame in a window is
+# shown to the model as true video input, so no candidate transition instant
+# is skipped. vllm_endpoint backend: window_frames still defines the window's
+# source span (unchanged), but only keyframes_per_window evenly-spaced
+# frames within it are actually rendered to images and sent (decoupled the
+# same way VLM_subtask_pipeline decouples model_frames from
+# vlm.keyframes_per_window) — a real tradeoff (sparser sampling than native
+# dense video) made for the proven, already-validated keyframe-image
+# pattern instead of vLLM's untested video_url path in this environment.
 level1_transitions:
   window_frames: 48        # frames per window == stride (no overlap)
+  keyframes_per_window: 12 # vllm_endpoint only: evenly-spaced frames of the
+                            # window actually sent as images
+  keyframe_size: 512       # px, long side (vllm_endpoint only)
   max_new_tokens: 512
   temperature: 0.2
-  repetition_penalty: 1.3
+  repetition_penalty: 1.3  # transformers backend only
   max_retries: 3
   retry_backoff_sec: 3.0
   min_segment_frames: 30   # degenerate-check floor (1s @ 30fps) — matches
@@ -58,10 +89,11 @@ level1_transitions:
 # IMPORTED from Kinematics_pipeline (see common.py), not redefined — so
 # both pipelines' outputs use identical vocabulary. Structural difference
 # from Kinematics_pipeline: there is no pose signal to compute the hand
-# from, so the VLM is asked for it directly, and there is no vLLM
-# guided-decoding here (local transformers generate() has no schema
-# constraint) — label_segments.py validates the closed vocab post-hoc and
-# retries on violation instead.
+# from, so the VLM is asked for it directly (now with explicit criteria —
+# see task_configs/ — after the same "everything defaults to both hands"
+# failure mode was found and fixed in VLM_subtask_pipeline). vllm_endpoint
+# backend adds real guided-JSON decoding (the closed vocabulary becomes
+# IMPOSSIBLE to violate, not just retried on violation).
 level2_labeling:
   keyframes_per_segment: 5
   keyframe_size: 768

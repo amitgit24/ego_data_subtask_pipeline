@@ -20,7 +20,9 @@ collide with the Kinematics reviewer in the same browser); the Export button
 downloads a JSON that report_verdicts.py scores.
 
     python make_review.py --n 20 [--seed 11]
-    -> Qwen_direct_pipeline/outputs/review/index.html   (open in any browser)
+    -> VLM_seg_subtask_pipeline/outputs/review/<task>/vlm_seg_subtask_pipeline_review.html
+       (folder = the task name when every selected episode is the same
+       task, else 'mixed_tasks')
 """
 
 import argparse
@@ -34,11 +36,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline"))
 from common import load_config  # noqa: E402
 
 
-def select_episodes(cfg, n, seed):
+def select_episodes(cfg, n, seed, episode_ids=None):
     ann_dir = Path(cfg["paths"]["output_dir"]) / "annotations"
     anns = [json.loads(f.read_text()) for f in sorted(ann_dir.glob("*.json"))]
     if not anns:
         raise SystemExit(f"no annotations in {ann_dir} — run the pipeline first")
+
+    if episode_ids:
+        wanted = set(episode_ids)
+        picked = [a for a in anns if a["episode_id"] in wanted]
+        missing = wanted - {a["episode_id"] for a in picked}
+        if missing:
+            raise SystemExit(f"no annotation found for: {sorted(missing)}")
+        return picked
 
     rng = random.Random(seed)
     flagged = [a for a in anns if a["review_queue"]]
@@ -59,6 +69,14 @@ def select_episodes(cfg, n, seed):
                 picked.append(a)
                 seen_tasks.add(a["episode_id"].split("/")[0])
     return picked
+
+
+def review_folder_name(episodes):
+    """outputs/review/<this> — named after what's actually being reviewed,
+    so batches for different tasks never overwrite each other or pile up
+    unlabeled in one flat folder."""
+    tasks = {a["episode_id"].split("/")[0] for a in episodes}
+    return next(iter(tasks)) if len(tasks) == 1 else "mixed_tasks"
 
 
 def transcode(src, dst, force=False):
@@ -249,6 +267,9 @@ def main():
     ap.add_argument("--config", default=None)
     ap.add_argument("--n", type=int, default=20)
     ap.add_argument("--seed", type=int, default=11)
+    ap.add_argument("--episodes", nargs="*", default=None,
+                    help="exact episode ids (task/idx) to review, "
+                         "overriding random --n selection")
     ap.add_argument("--force-transcode", action="store_true",
                     help="re-encode media even if it already exists "
                          "(use after changing transcode() settings)")
@@ -256,11 +277,13 @@ def main():
 
     cfg = load_config(args.config)
     data_dir = Path(cfg["paths"]["data_dir"])
-    out_dir = Path(cfg["paths"]["output_dir"]) / "review"
+
+    episodes = select_episodes(cfg, args.n, args.seed, episode_ids=args.episodes)
+    out_dir = (Path(cfg["paths"]["output_dir"]) / "review"
+              / review_folder_name(episodes))
     media = out_dir / "media"
     media.mkdir(parents=True, exist_ok=True)
 
-    episodes = select_episodes(cfg, args.n, args.seed)
     manifest = []
     for a in episodes:
         slug = a["episode_id"].replace("/", "__")
@@ -278,11 +301,11 @@ def main():
         print(f"  {a['episode_id']}: {len(a['subtasks'])} subtasks "
               f"{'[flagged]' if a['review_queue'] else ''}")
 
-    (out_dir / "index.html").write_text(
+    (out_dir / "vlm_seg_subtask_pipeline_review.html").write_text(
         HTML.replace("%%DATA%%", json.dumps(manifest)))
     n_flag = sum(m["flagged"] for m in manifest)
     print(f"\n{len(manifest)} episodes ({n_flag} flagged / "
-          f"{len(manifest) - n_flag} clean) -> {out_dir / 'index.html'}")
+          f"{len(manifest) - n_flag} clean) -> {out_dir / 'vlm_seg_subtask_pipeline_review.html'}")
     print("open it in a browser; export verdicts when done, then run "
           "report_verdicts.py on the downloaded JSON")
 

@@ -10,7 +10,9 @@ Verdicts persist in localStorage; the Export button downloads a JSON that
 eval/report_verdicts.py scores.
 
     python make_review.py --category pick_place --n 20 [--seed 11]
-    -> outputs/review/index.html   (open in any browser)
+    -> outputs/review/<task_or_category>/kinematics_pipeline_review.html
+       (folder = --category if given, else the task name when every
+       selected episode is the same task, else 'mixed_tasks')
 """
 
 import argparse
@@ -24,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pipeline"))
 from common import load_config, load_task_categories  # noqa: E402
 
 
-def select_episodes(cfg, category, n, seed):
+def select_episodes(cfg, category, n, seed, episode_ids=None):
     ann_dir = Path(cfg["paths"]["output_dir"]) / "annotations"
     anns = []
     for f in sorted(ann_dir.glob("*.json")):
@@ -36,6 +38,14 @@ def select_episodes(cfg, category, n, seed):
         anns.append(a)
     if not anns:
         raise SystemExit("no annotated episodes match the selection")
+
+    if episode_ids:
+        wanted = set(episode_ids)
+        anns = [a for a in anns if a["episode_id"] in wanted]
+        missing = wanted - {a["episode_id"] for a in anns}
+        if missing:
+            raise SystemExit(f"no annotation found for: {sorted(missing)}")
+        return anns
 
     rng = random.Random(seed)
     flagged = [a for a in anns if a["review_queue"]]
@@ -56,6 +66,18 @@ def select_episodes(cfg, category, n, seed):
                 picked.append(a)
                 seen_tasks.add(a["episode_id"].split("/")[0])
     return picked
+
+
+def review_folder_name(episodes, category=None):
+    """outputs/review/<this> — named after what's actually being reviewed,
+    so batches for different tasks never overwrite each other or pile up
+    unlabeled in one flat folder. --category wins when given (it can span
+    several task names); otherwise the task name if every episode is the
+    same task, else 'mixed_tasks'."""
+    if category:
+        return category
+    tasks = {a["episode_id"].split("/")[0] for a in episodes}
+    return next(iter(tasks)) if len(tasks) == 1 else "mixed_tasks"
 
 
 def transcode(src, dst, force=False):
@@ -245,6 +267,9 @@ def main():
     ap.add_argument("--category", default=None)
     ap.add_argument("--n", type=int, default=20)
     ap.add_argument("--seed", type=int, default=11)
+    ap.add_argument("--episodes", nargs="*", default=None,
+                    help="exact episode ids (task/idx) to review, "
+                         "overriding random --category/--n selection")
     ap.add_argument("--force-transcode", action="store_true",
                     help="re-encode media even if it already exists "
                          "(use after changing transcode() settings)")
@@ -252,11 +277,14 @@ def main():
 
     cfg = load_config(args.config)
     data_dir = Path(cfg["paths"]["data_dir"])
-    out_dir = Path(cfg["paths"]["output_dir"]) / "review"
+
+    episodes = select_episodes(cfg, args.category, args.n, args.seed,
+                               episode_ids=args.episodes)
+    out_dir = (Path(cfg["paths"]["output_dir"]) / "review"
+              / review_folder_name(episodes, args.category))
     media = out_dir / "media"
     media.mkdir(parents=True, exist_ok=True)
 
-    episodes = select_episodes(cfg, args.category, args.n, args.seed)
     manifest = []
     for a in episodes:
         slug = a["episode_id"].replace("/", "__")
@@ -274,11 +302,11 @@ def main():
         print(f"  {a['episode_id']}: {len(a['subtasks'])} subtasks "
               f"{'[flagged]' if a['review_queue'] else ''}")
 
-    (out_dir / "index.html").write_text(
+    (out_dir / "kinematics_pipeline_review.html").write_text(
         HTML.replace("%%DATA%%", json.dumps(manifest)))
     n_flag = sum(m["flagged"] for m in manifest)
     print(f"\n{len(manifest)} episodes ({n_flag} flagged / "
-          f"{len(manifest) - n_flag} clean) -> {out_dir / 'index.html'}")
+          f"{len(manifest) - n_flag} clean) -> {out_dir / 'kinematics_pipeline_review.html'}")
     print("open it in a browser; export verdicts when done, then run "
           "report_verdicts.py on the downloaded JSON")
 

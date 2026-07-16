@@ -28,6 +28,15 @@ def norm_obj(s):
 
 
 def mergeable(a, b, fps, merge_gap_s):
+    # a real grasp/release event at this boundary means a new action cycle
+    # genuinely started here (e.g. the next cup/object) -- never collapse
+    # that even if the VLM assigned both sides the same coarse
+    # action/object/hand triple (seen concretely: two segments "place lid
+    # onto right cup" / "place lid onto left cup" share action=assemble,
+    # object='white lid', hand='both_coordinating', so without this check
+    # they silently merge into one, erasing a real per-cup split).
+    if b["start_source"] in ("grasp", "release"):
+        return False
     return (a["vlm"]["action"] == b["vlm"]["action"]
             and norm_obj(a["vlm"]["object"]) == norm_obj(b["vlm"]["object"])
             and a["hand"] == b["hand"]

@@ -4,9 +4,11 @@
 # key paths anywhere else.
 
 paths:
-  data_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/test
-  output_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/Kinematics_pipeline/outputs
-  model_path: /mnt/3466ADC766AD8A66/research_paper/Robointer/models/Qwen3-VL-32B-Instruct
+  # old /mnt/3466ADC766AD8A66/... mount no longer exists on this machine;
+  # repointed 2026-07-14 to where the data/model actually live now.
+  data_dir: /data/egocentric_data/ego_dex_data/ego_dex_data_Extracted/part1/part1
+  output_dir: /data/egocentric_data/ego_data_subtask_pipeline/Kinematics_pipeline/outputs
+  model_path: /data/huggingface_cache/hub/models--Qwen--Qwen3-VL-32B-Instruct/snapshots/0cfaf48183f594c314753d30a4c4974bc75f3ccb
 
 # ---- confirmed by Level 0 audit (2026-07-10) ----
 hdf5:
@@ -70,6 +72,12 @@ hand_assignment:
   wrist_dist_tol: 0.15      # +-15% of segment-mean inter-wrist distance...
   wrist_dist_frac: 0.70     # ...for >70% of frames -> both_coordinating
   handover_window_s: 1.0    # grasp on one hand within 1 s of release on other
+  handover_max_wrist_dist: 0.15  # m; the pair only counts as a handover if
+                            # the wrists are also this close at that moment —
+                            # a real hand-to-hand pass requires proximity;
+                            # fast alternating bimanual work does not
+                            # (validated on add_remove_lid: all 21 false
+                            # positives sat at 0.24-0.55 m)
 
 # ---- Level 2 VLM labeling ----
 vlm:

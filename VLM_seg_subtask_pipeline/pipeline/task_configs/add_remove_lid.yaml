@@ -1,0 +1,67 @@
+# Task-specific tuning for add_remove_lid in the VLM-direct (transitions ->
+# labeling) pipeline. One file per task; a task with no file uses
+# config.yaml defaults untouched. Self-contained; cross-task/cross-pipeline
+# comparisons live in PIPELINE_NOTES.md, not here.
+#
+# Ported from the Kinematics_pipeline and VLM_subtask_pipeline siblings'
+# 5+ human-review rounds on this exact task: per-cup decomposition (one
+# grasp+release cycle per cup), cup named by position, direction taken from
+# the episode's resolved instruction, lid is a free object (not a hinge).
+
+# ---- Level 1: min-length floor ----
+# Global default (30 frames / 1s) matches the sibling pipelines' original
+# comparison baseline, but this task's real per-phase durations are much
+# shorter: measured on episode 165 (2 cups), raw Level 2 output was a clean
+# grasp/align/place/retract/grasp/place/retract 7-segment decomposition with
+# individual phases as short as 4-17 frames -- at the 30-frame floor, L3's
+# enforce_min_length collapsed all of that down to 2 generic "place"
+# segments, discarding the retract/align/grasp structure entirely (same
+# fast-transition finding as the Kinematics_pipeline and VLM_subtask_pipeline
+# siblings on this exact task).
+level1_transitions:
+  min_segment_frames: 8   # frames (0.27s)
+
+# ---- Level 1: transition-detection hint ----
+# Level 1 only finds STATE-CHANGE frames (grasp / release), it doesn't label
+# them — so this hint is direction-agnostic (the resolved instruction text
+# already tells the model add vs. remove) and just calibrates granularity:
+# how many transitions to expect and what NOT to merge.
+level1_hint: >
+  This video shows one or more cups, each with a lid that is either being
+  added to it or removed from it (up to 4 cups may be visible). EACH CUP's
+  lid produces its OWN pair of transitions: one grasp transition (the lid
+  leaving the table and being held, or the lid leaving the cup and being
+  held) and one release transition (the lid settling onto the cup and the
+  hand letting go, or the lid being set down on the table and the hand
+  letting go). For N cups, expect roughly N grasp transitions and N release
+  transitions — do not report only one grasp/release pair for the whole
+  episode if multiple cups are visible. The hand moving from one just-placed
+  (or just-removed) lid toward the next cup's lid is NOT itself a
+  transition; only the grasp and release instants are.
+
+# ---- Level 2: direction-aware labeling hints ----
+# attrs['which_llm_description'] == "1" -> add, "2" -> remove. Verified
+# across all 2,565 add_remove_lid episodes (Kinematics_pipeline sibling,
+# 2026-07-14): 100% classify cleanly.
+level2_prompt_hint_by_attr: which_llm_description
+level2_prompt_hints:
+  "1": >
+    This segment is part of an episode that ADDS lid(s) onto cup(s): each
+    lid starts separate from any cup. The lid is a small free object, not a
+    hinged or sliding mechanism — use reach/grasp/pick/align/place/
+    release/retract verbs for it, not push/pull/slide. When more than one
+    cup is visible, name the cup being worked on by its position (e.g. "the
+    second cup from the left", "the rightmost cup"). A segment that starts
+    right after a lid was placed and shows the hand(s) travelling back
+    empty toward the next lid is a retract/reach phase — describe that
+    motion, do not describe it as placing or assembling anything.
+  "2": >
+    This segment is part of an episode that REMOVES lid(s) from cup(s):
+    each lid starts seated on a cup. The lid is a small free object, not a
+    hinged or sliding mechanism — use reach/grasp/remove/lift/put_down/
+    release/retract verbs for it, not push/pull/slide. When more than one
+    cup is visible, name the cup being worked on by its position (e.g. "the
+    second cup from the left", "the rightmost cup"). A segment that starts
+    right after a lid was set down and shows the hand(s) travelling back
+    empty toward the next cup is a retract/reach phase — describe that
+    motion, do not describe it as removing anything.

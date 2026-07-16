@@ -1,0 +1,97 @@
+{
+  "episode_id": "add_remove_lid/2562",
+  "task": "Add the lid onto each of the three cups placed on the wooden table with a red background.",
+  "fps": 30.0,
+  "n_frames": 294,
+  "embodiment": "hand",
+  "generate_params": {
+    "model_frames": 48,
+    "frame_skip": 0
+  },
+  "num_windows": 7,
+  "n_candidates": 5,
+  "n_stitched": 5,
+  "wall_sec": 75.6,
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": 122,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "grasp",
+        "hand": "right",
+        "object": "clear plastic bag containing small green items",
+        "subtask": "Right hand grasps the clear plastic bag containing small green items from the box.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 122,
+      "end_frame": 161,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "retract",
+        "hand": "right",
+        "object": "clear plastic bag containing small green items",
+        "subtask": "Right hand retracts the clear plastic bag containing small green items from the box.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 165,
+      "end_frame": 274,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "unfold",
+        "hand": "both",
+        "object": "folded wooden chessboard",
+        "subtask": "Both hands unfold the folded wooden chessboard on the table.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 274,
+      "end_frame": 288,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "reposition",
+        "hand": "left",
+        "object": "unfolded wooden chessboard",
+        "subtask": "Left hand repositions the unfolded wooden chessboard on the table.",
+        "confidence": "high"
+      }
+    },
+    {
+      "start_frame": 289,
+      "end_frame": 293,
+      "start_source": "vlm_subtask",
+      "end_source": "vlm_subtask",
+      "transition_before": null,
+      "transition_after": null,
+      "style_id": -1,
+      "vlm": {
+        "action": "idle",
+        "hand": "left",
+        "object": "none",
+        "subtask": "Left hand is idle above the table near the chessboard.",
+        "confidence": "high"
+      }
+    }
+  ]
+}

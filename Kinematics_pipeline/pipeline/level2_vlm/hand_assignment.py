@@ -22,13 +22,21 @@ def _activity(sig, side, s, e, ha_cfg):
     return float(score), active
 
 
-def _is_handover(events, ha_cfg, fps):
-    """Grasp on one hand within handover_window_s of a release on the other."""
+def _is_handover(events, sig, ha_cfg, fps):
+    """Grasp on one hand within handover_window_s of a release on the other,
+    AND the wrists near each other at that moment — passing an object between
+    hands physically requires the hands to meet. Without the distance gate,
+    fast alternating bimanual work (one hand sets an object down while the
+    other grabs the next one) fires constantly: measured on add_remove_lid,
+    21/21 time-only "handover" pairs had the wrists 0.24-0.55 m apart."""
     win = ha_cfg["handover_window_s"] * fps
+    max_dist = ha_cfg["handover_max_wrist_dist"]
+    d = np.linalg.norm(sig["wrist_pos_left"] - sig["wrist_pos_right"], axis=1)
     for g in (e for e in events if e["type"] == "grasp"):
         for r in (e for e in events if e["type"] == "release"):
             if g["hand"] != r["hand"] and abs(g["frame"] - r["frame"]) <= win:
-                return True
+                if d[(g["frame"] + r["frame"]) // 2] <= max_dist:
+                    return True
     return False
 
 
@@ -67,7 +75,7 @@ def assign_hand(sig, segment, cfg):
         hand = "right"
     else:
         hand = "both"
-        if _is_handover(events, ha, sig["fps"]):
+        if _is_handover(events, sig, ha, sig["fps"]):
             hand, coordination = "both_coordinating", "handover"
         elif _is_joint_carry(sig, s, e, ha):
             hand, coordination = "both_coordinating", "joint_carry"

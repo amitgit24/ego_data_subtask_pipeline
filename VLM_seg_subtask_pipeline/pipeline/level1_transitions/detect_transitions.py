@@ -26,8 +26,10 @@ CLI:
 """
 
 import argparse
+import base64
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -36,10 +38,16 @@ import torch
 from qwen_vl_utils import process_vision_info
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import episode_id, episode_slug, load_config, sample_episodes  # noqa: E402
+from common import (apply_task_overrides, episode_id, episode_slug,  # noqa: E402
+                    load_config, load_task_config, resolve_description,
+                    sample_episodes)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from model_backend import load_model, probe_video  # noqa: E402
+from model_backend import probe_video  # noqa: E402
+from transitions_vlm_backend import EndpointBackend  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "level2_labeling"))
+from keyframes import extract_keyframes  # noqa: E402
 
 
 def tolerant_json(text):
@@ -52,19 +60,15 @@ def tolerant_json(text):
     return json.loads(text[start:end + 1])
 
 
-def build_prompt(instruction, frame_entries, total_frames):
-    frame_lines = "\n".join(
-        f"  Frame {abs_frame}: t={t:.2f}s" for abs_frame, t in frame_entries)
-    first_frame, last_frame = frame_entries[0][0], frame_entries[-1][0]
-
+def _transitions_instructions(instruction, task_hint, window_desc, frames_desc):
+    hint_block = f"\nTask-specific guidance: {task_hint.strip()}\n" if task_hint else ""
     return f"""You are segmenting an egocentric manipulation video into subtasks.
 
 The overall task being performed in the FULL video is:
   "{instruction}"
-
-You are shown ONE WINDOW of that video: source frames {first_frame} to {last_frame}
-(of {total_frames} total), every frame, in chronological order:
-{frame_lines}
+{hint_block}
+You are shown ONE WINDOW of that video: {window_desc}
+{frames_desc}
 
 Find the TRANSITION frames inside this window. A transition is the single frame
 where the hand-object interaction state logically changes, i.e. a subtask
@@ -84,15 +88,60 @@ For each transition, report:
 
 If the interaction state NEVER changes in this window (e.g. the hand is only
 moving, or one action is still in progress the whole time), return an empty
-list -- that is a perfectly good answer. Do not invent transitions.
+list -- that is a perfectly good answer. Do not invent transitions."""
+
+
+def build_prompt(instruction, frame_entries, total_frames, task_hint=None):
+    frame_lines = "\n".join(
+        f"  Frame {abs_frame}: t={t:.2f}s" for abs_frame, t in frame_entries)
+    first_frame, last_frame = frame_entries[0][0], frame_entries[-1][0]
+    window_desc = (f"source frames {first_frame} to {last_frame} "
+                   f"(of {total_frames} total), every frame, in "
+                   f"chronological order:")
+    body = _transitions_instructions(instruction, task_hint, window_desc,
+                                     frame_lines)
+    return body + """
 
 Return ONLY a JSON object, no prose, no code fences:
-{{"transitions": [{{"frame": <int>, "before": "<str>", "after": "<str>"}}]}}"""
+{"transitions": [{"frame": <int>, "before": "<str>", "after": "<str>"}]}"""
+
+
+def select_window_frames(w_start, w_end, window_frames, keyframes_per_window):
+    """Evenly-spaced source frames within [w_start, w_end], always keeping
+    the first and last (vllm_endpoint backend: caps how many of the
+    window's frames are actually rendered to images and sent)."""
+    candidates = list(range(w_start, w_end + 1))[:window_frames]
+    if len(candidates) <= keyframes_per_window:
+        return candidates
+    step = (len(candidates) - 1) / (keyframes_per_window - 1)
+    idxs = sorted({round(i * step) for i in range(keyframes_per_window)})
+    return [candidates[i] for i in idxs]
+
+
+def build_prompt_content(instruction, kf_data, total_frames, task_hint):
+    """OpenAI-format content list (text + interleaved images) for the
+    vllm_endpoint backend."""
+    first, last = kf_data[0][0], kf_data[-1][0]
+    window_desc = (f"{len(kf_data)} keyframes sampled from source frames "
+                   f"{first} to {last} (of {total_frames} total), in "
+                   f"chronological order, each labeled with its absolute "
+                   f"source frame number and timestamp.")
+    content = [{"type": "text", "text":
+        _transitions_instructions(instruction, task_hint, window_desc, "")}]
+    for frame, tag, path in kf_data:
+        content.append({"type": "text", "text": f"Frame {frame}: t={tag}"})
+        b64 = base64.b64encode(Path(path).read_bytes()).decode()
+        content.append({"type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+    content.append({"type": "text", "text":
+        "Respond ONLY with JSON matching the schema."})
+    return content
 
 
 @torch.inference_mode()
-def detect_window(model, processor, video_path, instruction, window_start,
-                  window_end, fps, total_frames, cfg):
+def detect_window_transformers(model, processor, video_path, instruction,
+                               window_start, window_end, fps, total_frames,
+                               cfg, task_hint=None):
     """Run one window. Returns (list_of_transitions, frame_entries)."""
     v = cfg["level1_transitions"]
     # span-1, not span+1: qwen_vl_utils derives the available frame count from
@@ -120,7 +169,7 @@ def detect_window(model, processor, video_path, instruction, window_start,
     frame_entries = [(int(idx), float(idx) / fps)
                      for idx in metadata_probe["frames_indices"]]
 
-    prompt = build_prompt(instruction, frame_entries, total_frames)
+    prompt = build_prompt(instruction, frame_entries, total_frames, task_hint)
     messages = [{"role": "user",
                 "content": [video_content, {"type": "text", "text": prompt}]}]
 
@@ -145,19 +194,40 @@ def detect_window(model, processor, video_path, instruction, window_start,
     return parsed.get("transitions") or [], frame_entries
 
 
-def process_episode(model, processor, h5_path, cfg):
+def detect_window_vllm(backend, video_path, instruction, window_start,
+                       window_end, fps, total_frames, cfg, task_hint,
+                       kf_out_dir, window_index):
+    v = cfg["level1_transitions"]
+    frames = select_window_frames(window_start, window_end, v["window_frames"],
+                                  v["keyframes_per_window"])
+    frame_tags = [(f, f"{f / fps:.2f}s") for f in frames]
+    kf = extract_keyframes(video_path, frame_tags, v["keyframe_size"],
+                           kf_out_dir, window_index)
+    content = build_prompt_content(instruction, kf, total_frames, task_hint)
+    out_text = backend.generate(content)
+    parsed = tolerant_json(out_text)
+    frame_entries = [(f, f / fps) for f, _, _ in kf]
+    return parsed.get("transitions") or [], frame_entries
+
+
+def process_episode(backend, h5_path, cfg):
     """Full Level 1 result for one episode. Returns the boundaries dict;
     does NOT write it to disk (caller decides, so run_pipeline.py can chain
-    straight into Level 2 without a round-trip through the filesystem)."""
+    straight into Level 2 without a round-trip through the filesystem).
+
+    backend: ("transformers", model, processor) or ("vllm_endpoint", EndpointBackend)."""
+    task_name = h5_path.parent.name
+    cfg = apply_task_overrides(cfg, task_name)
     v = cfg["level1_transitions"]
     video_path = h5_path.with_suffix(".mp4")
     with h5py.File(h5_path, "r") as f:
-        from common import resolve_description
         instruction = resolve_description(dict(f.attrs), cfg)
+    task_hint = load_task_config(task_name).get("level1_hint")
 
     duration, fps = probe_video(video_path, cfg["video"]["fps_fallback"])
     total_frames = int(round(duration * fps))
     window_frames = v["window_frames"]
+    kf_out_dir = Path(cfg["paths"]["output_dir"]) / "boundaries" / "keyframes" / episode_slug(h5_path)
 
     all_transitions = []
     window_start, window_index = 0, 0
@@ -167,9 +237,18 @@ def process_episode(model, processor, h5_path, cfg):
         transitions, last_err = None, None
         for attempt in range(1, v["max_retries"] + 1):
             try:
-                transitions, _ = detect_window(
-                    model, processor, video_path, instruction, window_start,
-                    window_end, fps, total_frames, cfg)
+                if backend[0] == "transformers":
+                    _, model, processor = backend
+                    transitions, _ = detect_window_transformers(
+                        model, processor, video_path, instruction,
+                        window_start, window_end, fps, total_frames, cfg,
+                        task_hint)
+                else:
+                    _, endpoint = backend
+                    transitions, _ = detect_window_vllm(
+                        endpoint, video_path, instruction, window_start,
+                        window_end, fps, total_frames, cfg, task_hint,
+                        kf_out_dir, window_index)
                 break
             except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
                 last_err = e
@@ -243,16 +322,23 @@ def main():
     else:
         ap.error("give --episodes or --sample")
 
-    model, processor = load_model(cfg["paths"]["model_path"],
-                                  cfg["model"]["attn_implementation"],
-                                  cfg["model"]["dtype"])
+    if cfg["vlm"]["backend"] == "vllm_endpoint":
+        from transitions_vlm_backend import check_vlm_endpoint
+        check_vlm_endpoint(cfg)
+        backend = ("vllm_endpoint", EndpointBackend(cfg))
+    else:
+        from model_backend import load_model
+        model, processor = load_model(cfg["paths"]["model_path"],
+                                      cfg["model"]["attn_implementation"],
+                                      cfg["model"]["dtype"])
+        backend = ("transformers", model, processor)
 
     for p in paths:
         out_file = out_dir / f"{episode_slug(p)}.json"
         if out_file.exists() and not args.force:
             print(f"skip (exists): {episode_id(p)}")
             continue
-        result = process_episode(model, processor, p, cfg)
+        result = process_episode(backend, p, cfg)
         out_file.write_text(json.dumps(result, indent=2))
         print(f"{result['episode_id']}: {result['n_frames']} frames, "
               f"{result['num_windows']} windows -> {len(result['segments'])} "

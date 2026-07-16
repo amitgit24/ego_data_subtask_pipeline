@@ -1,0 +1,73 @@
+[
+  {
+    "chunk": 0,
+    "span": [
+      0,
+      47
+    ],
+    "story": "",
+    "raw_response": "{\n  \"subtasks\": [\n    {\n      \"start_frame\": 0,\n      \"end_frame\": 13,\n      \"action\": \"idle\",\n      \"hand\": \"both\",\n      \"object\": \"four white paper cups and four white lids on a wooden table\",\n      \"subtask\": \"Both hands are idle above the table with four white paper cups and four white lids arranged in front.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 13,\n      \"end_frame\": 26,\n      \"action\": \"reach\",\n      \"hand\": \"right\",\n      \"object\": \"the third lid from the left\",\n      \"subtask\": \"Right hand reaches toward the third lid from the left on the wooden table.\",\n      \"confidence\": \"high\",\n      \"ongoing\": false\n    },\n    {\n      \"start_frame\": 26,\n      \"end_frame\": 30,\n      \"action\": \"grasp\",\n      \"hand\": \"right\",\n      \"object\": \"the third lid from the left\",\n      \"subtask\": \"Right hand grasps the third lid from the left on the wooden table.\",\n      \"confidence\": \"high\",\n      \"ongoing\": false\n    },\n    {\n      \"start_frame\": 30,\n      \"end_frame\": 34,\n      \"action\": \"lift\",\n      \"hand\": \"right\",\n      \"object\": \"the third lid from the left\",\n      \"subtask\": \"Right hand lifts the third lid from the left off the wooden table.\",\n      \"confidence\": \"high\",\n      \"ongoing\": false\n    },\n    {\n      \"start_frame\": 34,\n      \"end_frame\": 47,\n      \"action\": \"place\",\n      \"hand\": \"both\",\n      \"object\": \"the third lid from the left\",\n      \"subtask\": \"Both hands place the third lid from the left onto the third cup from the left.\",\n      \"confidence\": \"high\",\n      \"ongoing\": true\n    }\n  ]\n}",
+    "kept": [
+      {
+        "start_frame": 0,
+        "end_frame": 13,
+        "action": "idle",
+        "hand": "both",
+        "object": "four white paper cups and four white lids on a wooden table",
+        "subtask": "Both hands are idle above the table with four white paper cups and four white lids arranged in front.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 13,
+        "end_frame": 26,
+        "action": "reach",
+        "hand": "right",
+        "object": "the third lid from the left",
+        "subtask": "Right hand reaches toward the third lid from the left on the wooden table.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 26,
+        "end_frame": 30,
+        "action": "grasp",
+        "hand": "right",
+        "object": "the third lid from the left",
+        "subtask": "Right hand grasps the third lid from the left on the wooden table.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 30,
+        "end_frame": 34,
+        "action": "lift",
+        "hand": "right",
+        "object": "the third lid from the left",
+        "subtask": "Right hand lifts the third lid from the left off the wooden table.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 34,
+        "end_frame": 47,
+        "action": "place",
+        "hand": "both",
+        "object": "the third lid from the left",
+        "subtask": "Both hands place the third lid from the left onto the third cup from the left.",
+        "confidence": "high",
+        "ongoing": true
+      }
+    ],
+    "open_tail_after": {
+      "start_frame": 34,
+      "end_frame": 47,
+      "action": "place",
+      "hand": "both",
+      "object": "the third lid from the left",
+      "subtask": "Both hands place the third lid from the left onto the third cup from the left.",
+      "confidence": "high",
+      "ongoing": true
+    }
+  }
+]

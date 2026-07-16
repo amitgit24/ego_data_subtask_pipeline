@@ -14,9 +14,11 @@
 # coherence.
 
 paths:
-  data_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/test
-  output_dir: /mnt/3466ADC766AD8A66/research_paper/Robointer/egodex/VLM_subtask_pipeline/outputs
-  model_path: /mnt/3466ADC766AD8A66/research_paper/Robointer/models/Qwen3-VL-32B-Instruct
+  # old /mnt/3466ADC766AD8A66/... mount no longer exists on this machine;
+  # repointed 2026-07-15 to match Kinematics_pipeline/pipeline/config.yaml.
+  data_dir: /data/egocentric_data/ego_dex_data/ego_dex_data_Extracted/part1/part1
+  output_dir: /data/egocentric_data/ego_data_subtask_pipeline/VLM_subtask_pipeline/outputs
+  model_path: /data/huggingface_cache/hub/models--Qwen--Qwen3-VL-32B-Instruct/snapshots/0cfaf48183f594c314753d30a4c4974bc75f3ccb
 
 # language-annotation resolution — same facts as the sibling pipelines
 hdf5:
@@ -31,7 +33,40 @@ video:
 
 model:
   attn_implementation: sdpa   # sdpa | flash_attention_2 | eager
-  dtype: bfloat16
+  dtype: bfloat16            # only used by the `transformers` vlm.backend
+
+# ---- vLLM-server backend (default) ----
+# Added 2026-07-15: the original transformers-direct backend (model.generate()
+# in-process, one window at a time, no batching) loads the same 32B weights a
+# second time and is much slower than the Kinematics sibling's vLLM-served
+# approach, since it gets none of vLLM's continuous batching / paged KV cache
+# / concurrent-request throughput. This block points at the SAME vLLM server
+# process the sibling pipelines use (start it with the command printed by
+# run_pipeline.py if it's not already up) — only one Qwen3-VL-32B needs to be
+# resident on the GPU at a time, so stop this pipeline's own server before
+# running a sibling that needs the model loaded a different way, and vice
+# versa. Unlike the sibling pipelines (which send a handful of keyframes for
+# ONE already-known segment), this pipeline must discover unknown segment
+# boundaries from a wide time window, so it needs more images per request —
+# the server must be launched with a correspondingly higher
+# `--limit-mm-per-prompt '{"image": N}'` (>= vlm.keyframes_per_window) and a
+# large enough `--max-model-len` to hold them (12 images @ keyframe_size 640
+# fits comfortably under 24576).
+vlm:
+  backend: vllm_endpoint    # vllm_endpoint | transformers
+  endpoint_url: http://localhost:8000/v1
+  api_key: EMPTY
+  model_name: Qwen3-VL-32B-Instruct
+  keyframes_per_window: 12  # evenly-spaced frames actually sent as images per
+                            # window (<= generate.model_frames candidates);
+                            # must stay <= the server's --limit-mm-per-prompt
+  keyframe_size: 640        # px, long side — smaller than the siblings' 768
+                            # since more images are sent per request here
+  concurrency: 4            # parallel EPISODES in flight (windows within one
+                            # episode stay sequential: each window's prompt
+                            # depends on the stitched story-so-far of the
+                            # previous ones, exactly like the Kinematics
+                            # sibling's per-segment sequential constraint)
 
 # ---- single-pass sliding-window generation (the heart of this pipeline) ----
 # Per window the model is shown model_frames frames sampled with stride
@@ -43,14 +78,25 @@ model:
 # Consecutive windows overlap by overlap_frac of that source span (advance =
 # span * (1 - overlap_frac)); the overlap is what the model re-sees so a subtask
 # spanning a window boundary stays coherent. Both knobs are meant to be swept.
+# NOTE model_frames still defines the window's SOURCE SPAN/candidate grid (span
+# = model_frames * stride) exactly as before; it is independent from
+# vlm.keyframes_per_window, which caps how many of those candidate frames are
+# actually rendered to images and sent to the model (evenly subsampled,
+# keeping first and last). Only the vllm_endpoint backend does this
+# subsampling; the transformers backend still feeds model_frames raw video
+# frames natively via qwen_vl_utils.
 generate:
   model_frames: 48         # frames actually fed to the model per window
+                           # (transformers backend) / candidate grid size
+                           # before keyframe subsampling (vllm_endpoint)
   frame_skip: 1            # 0, 1, or 2  -> sampling stride = frame_skip + 1
   overlap_frac: 0.33       # fraction of the window's source span that
                            # consecutive windows share (0.0 = no overlap)
   story_context_segments: 3  # how many finalized subtasks to echo back into
                              # the next window's prompt for coherence
-  max_new_tokens: 768      # a window may emit several labeled subtasks
+  max_new_tokens: 1024     # a window may emit several labeled subtasks;
+                           # bumped from 768 for the vllm_endpoint JSON-array
+                           # schema's per-item overhead
   temperature: 0.2
   repetition_penalty: 1.2
   max_retries: 3

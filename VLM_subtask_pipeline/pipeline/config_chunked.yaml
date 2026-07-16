@@ -1,0 +1,80 @@
+# Chunked (non-overlapping) sibling of config.yaml -- see
+# generate_subtasks_chunked.py's docstring for the concept. Where config.yaml's
+# windows overlap so the model re-sees shared frames for cross-window
+# coherence, THIS generator shows each source frame exactly once: fixed
+# 48-frame chunks back to back (no re-showing), and instead leans on an
+# explicit continuation-aware prompt (the "story so far" PLUS an explicit
+# open-subtask handoff) to keep a subtask that crosses a chunk boundary
+# coherent purely from text, without ever re-observing the frames.
+#
+# Fully separate paths.output_dir from config.yaml's so the two generators'
+# per-episode label files never collide -- run both against the SAME source
+# data_dir / vLLM server (guided-JSON schema is bound per-request by the
+# client, not by the server, so both pipelines can share one already-running
+# server; no need to relaunch it for this one).
+
+paths:
+  data_dir: /data/egocentric_data/ego_dex_data/ego_dex_data_Extracted/part1/part1
+  output_dir: /data/egocentric_data/ego_data_subtask_pipeline/VLM_subtask_pipeline/outputs_chunked
+  model_path: /data/huggingface_cache/hub/models--Qwen--Qwen3-VL-32B-Instruct/snapshots/0cfaf48183f594c314753d30a4c4974bc75f3ccb
+
+hdf5:
+  task_attr: task
+  description_attr: llm_description
+  description2_attr: llm_description2
+  which_description_attr: which_llm_description
+  fallback_description_attr: description
+
+video:
+  fps_fallback: 30.0
+
+model:
+  attn_implementation: sdpa   # sdpa | flash_attention_2 | eager
+  dtype: bfloat16            # only used by the `transformers` vlm.backend
+
+vlm:
+  backend: vllm_endpoint    # vllm_endpoint | transformers
+  endpoint_url: http://localhost:8000/v1
+  api_key: EMPTY
+  model_name: Qwen3-VL-32B-Instruct
+  keyframes_per_window: 12  # evenly-spaced frames actually sent as images per
+                            # chunk; must stay <= the server's
+                            # --limit-mm-per-prompt (shared server, same
+                            # limit the sliding-window sibling already needs)
+  keyframe_size: 640
+  concurrency: 4            # parallel EPISODES in flight (chunks within one
+                            # episode stay strictly sequential -- each
+                            # chunk's prompt depends on the previous chunk's
+                            # finalized story AND open-subtask handoff)
+
+# ---- fixed-size, non-overlapping chunk generation ----
+# Chunk i covers exactly model_frames * (frame_skip + 1) source frames, and
+# chunk i+1 starts on the very next source frame -- no advance/overlap
+# arithmetic like the sliding-window sibling, no re-shown frames. frame_skip
+# defaults to 0 here (unlike the sibling's 1): there is no overlapping
+# neighbor that could backfill a skipped frame from a shifted phase, so
+# every raw frame is shown to some chunk exactly once only if skip is 0.
+generate:
+  model_frames: 48        # frames per chunk -- the "then the next 48
+                          # frames, and so on" unit; also the vllm_endpoint
+                          # candidate grid size before keyframe subsampling
+  frame_skip: 0           # 0 = every source frame seen exactly once across
+                          # the whole episode (no gaps, no overlap, no reuse)
+  story_context_segments: 3  # finalized (non-open) subtasks echoed back for
+                             # narrative coherence, same as the sibling
+  max_new_tokens: 1024
+  temperature: 0.2
+  repetition_penalty: 1.2
+  max_retries: 3
+  retry_backoff_sec: 3.0
+  min_segment_frames: 10  # same floor as the sliding-window sibling to
+                          # start from; revisit once this generator's own
+                          # boundary granularity has been human-reviewed
+  debug_first_n: 10
+
+# ---- L3 assembly (identical shape to the sliding-window sibling) ----
+assembly:
+  merge_gap_s: 0.5
+  idle_gap_s: 1.0
+  short_segment_frac: 0.34
+  pipeline_version: "0.1.0-singlepass-chunked"

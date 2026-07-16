@@ -11,14 +11,15 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import episode_slug, load_config  # noqa: E402
+from common import apply_task_overrides, episode_slug, load_config  # noqa: E402
 from postprocess import postprocess  # noqa: E402
 from schema import EpisodeAnnotation  # noqa: E402
 
 
-def assemble_episode(label_file, cfg):
+def assemble_episode(label_file, cfg, mirror_to_source=False):
     record = json.loads(label_file.read_text())
-    subtasks, review = postprocess(record, cfg)
+    task_name = record["episode_id"].split("/")[0]
+    subtasks, review = postprocess(record, apply_task_overrides(cfg, task_name))
     ann = EpisodeAnnotation(
         episode_id=record["episode_id"],
         task=record["task"],
@@ -31,7 +32,15 @@ def assemble_episode(label_file, cfg):
     out_dir = Path(cfg["paths"]["output_dir"]) / "annotations"
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / label_file.name
-    out.write_text(ann.model_dump_json(indent=2))
+    body = ann.model_dump_json(indent=2)
+    out.write_text(body)
+    if mirror_to_source:
+        # deliverable copy, same folder/basename as the source .hdf5 -- the
+        # outputs/annotations/ copy above stays the pipeline's own working
+        # copy (resumability skip-check, verify_level3.py, make_review.py
+        # all read from there; this is purely an additional write).
+        mirror = Path(cfg["paths"]["data_dir"]) / f"{record['episode_id']}.json"
+        mirror.write_text(body)
     return ann, out
 
 
@@ -41,6 +50,10 @@ def main():
     ap.add_argument("--episodes", nargs="*", default=None)
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--mirror-to-source", action="store_true",
+                    help="also write a copy of each episode's annotation "
+                         "next to its source .hdf5 (same folder, same "
+                         "base filename)")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -62,7 +75,7 @@ def main():
             skipped += 1
             continue
         try:
-            ann, out = assemble_episode(f, cfg)
+            ann, out = assemble_episode(f, cfg, args.mirror_to_source)
             done += 1
             print(f"[{done}] {ann.episode_id}: {len(ann.subtasks)} subtasks "
                   f"({len(ann.review_queue)} queued for review) -> {out.name}")

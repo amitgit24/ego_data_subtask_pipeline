@@ -1,0 +1,94 @@
+# Task-specific tuning for add_remove_lid, layered over config.yaml's global
+# `kinematics:` block and task_categories.yaml's category prompt_hint.
+# Self-contained: everything needed to understand this task's tuning lives
+# here. Cross-task/category comparisons live in PIPELINE_NOTES.md, not here.
+
+# Motion profile: picking up or placing a small paper cup lid — a fast,
+# short pick/place, not a hinge or slide. Measured duration scales with cup
+# count (1-6 cups in frame): ~0.3-0.5s per grasp-to-release, ~2.6-3.7s per
+# full cup cycle including reach/transport. 1-cup episodes (mean 3.79s,
+# 113 frames) are the tightest fit against the segment-length floor.
+kinematics:
+  min_segment_frames: 15   # frames (0.5s); global default is 30 (1s) —
+                            # this task's per-cup cycle is fast (~0.3-0.5s
+                            # grasp-to-release), so at 20 frames the
+                            # release(cup N) and grasp(lid N+1) boundaries
+                            # still collided and the hand's trace-back kept
+                            # getting absorbed into the previous assemble
+                            # segment (round-3 human review: 12/17 boundary
+                            # errors were exactly this). 15 frames lets both
+                            # edges survive ≥0.5s apart. Keep >= merge_window.
+  merge_window: 10          # frames (0.33s); global default is 15 (0.5s) —
+                            # lowered together with min_segment_frames so a
+                            # release and the next grasp 0.33-0.5s apart are
+                            # treated as two distinct boundaries instead of
+                            # being fused into one.
+  release_speed_max: 0.25   # m/s; off globally. An aperture-opening peak
+                            # only counts as a release if the wrist moves
+                            # slower than this at the peak. Round-4 human
+                            # review kept flagging retraction glued to the
+                            # previous segment even after release-priority
+                            # fixes — because the detected "release" was
+                            # actually the hand opening MID-SWING to
+                            # pre-shape for the next lid (measured: true
+                            # releases at 0.01-0.18 m/s wrist speed,
+                            # pre-grasp openings at 0.30-0.67 m/s).
+  aperture_vel_thresh: 0.08 # m/s; global default is 0.15 — found via human
+                            # review (2026-07-14 batch 2) that this task's
+                            # small, fast lid pinch/release routinely peaks
+                            # well under 0.15 (episode 165: max 0.149 m/s
+                            # over the whole clip -> literally zero grasp/
+                            # release events detected at the old threshold,
+                            # for a 2-cup episode that needs at least 2).
+                            # Swept 0.05-0.15 against known cup counts
+                            # across 24 sample episodes; 0.08 recovers a
+                            # realistic number of raw candidates per cup
+                            # (pre-merge) without going as noisy as 0.05.
+                            # This single fix addresses two review findings
+                            # at once: missing boundaries BETWEEN cups
+                            # (no event = no split) and missing reach/place
+                            # splits WITHIN one cup's cycle (the grasp event
+                            # itself is that internal boundary).
+
+# Direction: this task is annotated `llm_type: reversible` — every episode
+# stores BOTH an add-phrased description (attrs['llm_description'], always
+# leads with "Add"/"Place") and a remove-phrased one
+# (attrs['llm_description2'], always leads with "Remove"), and
+# attrs['which_llm_description'] ("1" or "2") says which one actually
+# happened in that episode. Checked across all 2,565 episodes
+# (2026-07-14): 100% classify cleanly, no ambiguous/other cases —
+# 1,295 add-direction ("1"), 1,270 remove-direction ("2"). The two
+# directions are different motions (add: lid starts loose, ends seated;
+# remove: lid starts seated, ends loose) so they get different prompt
+# hints instead of one hint straddling both.
+prompt_hint_by_attr: which_llm_description
+prompt_hints:
+  "1": >
+    This episode ADDS lid(s) onto cup(s): each lid starts separate from any
+    cup. Expect, per cup: reach for the loose lid -> grasp -> transport ->
+    align it over the cup -> place/release so it seats on the cup. The lid
+    is a small free object, not a hinged or sliding mechanism — use
+    reach/grasp/pick/place/insert/release verbs for it, not push/pull/slide
+    (only use those if the frames show sliding without lifting the lid
+    clear). With up to 4 cups in frame, each cup gets its own
+    grasp/transport/place cycle; do not describe multiple cups in one
+    segment. When more than one cup is visible, name the cup being worked
+    on by its position in the sentence (e.g. "the second cup from the
+    left", "the rightmost cup"). After a lid is seated on its cup, the
+    hands returning empty toward the next lid is a retract/reach segment —
+    describe that hand motion; do not describe it as placing or assembling
+    anything.
+  "2": >
+    This episode REMOVES lid(s) from cup(s): each lid starts already
+    seated on a cup. Expect, per cup: reach for the lid while it is still
+    on the cup -> grasp -> lift/pull it clear -> transport it away ->
+    release/set it down elsewhere. The lid is a small free object, not a
+    hinged or sliding mechanism — use reach/grasp/remove/lift/release verbs
+    for it, not push/pull/slide (only use those if the frames show sliding
+    without lifting the lid clear). With up to 4 cups in frame, each cup
+    gets its own grasp/lift-off/transport cycle; do not describe multiple
+    cups in one segment. When more than one cup is visible, name the cup
+    being worked on by its position in the sentence (e.g. "the second cup
+    from the left", "the rightmost cup"). After a lid is set down, the
+    hands returning empty toward the next cup is a retract/reach segment —
+    describe that hand motion; do not describe it as removing anything.

@@ -1,0 +1,177 @@
+[
+  {
+    "chunk": 0,
+    "span": [
+      0,
+      47
+    ],
+    "story": "",
+    "raw_response": "{\n  \"subtasks\": [\n    {\n      \"start_frame\": 0,\n      \"end_frame\": 47,\n      \"action\": \"grasp\",\n      \"hand\": \"right\",\n      \"object\": \"clear plastic bag containing small green items\",\n      \"subtask\": \"Right hand grasps the clear plastic bag containing small green items from the box.\",\n      \"confidence\": \"high\",\n      \"ongoing\": true\n    }\n  ]\n}",
+    "kept": [
+      {
+        "start_frame": 0,
+        "end_frame": 47,
+        "action": "grasp",
+        "hand": "right",
+        "object": "clear plastic bag containing small green items",
+        "subtask": "Right hand grasps the clear plastic bag containing small green items from the box.",
+        "confidence": "high",
+        "ongoing": true
+      }
+    ],
+    "open_tail_after": {
+      "start_frame": 0,
+      "end_frame": 47,
+      "action": "grasp",
+      "hand": "right",
+      "object": "clear plastic bag containing small green items",
+      "subtask": "Right hand grasps the clear plastic bag containing small green items from the box.",
+      "confidence": "high",
+      "ongoing": true
+    }
+  },
+  {
+    "chunk": 1,
+    "span": [
+      48,
+      95
+    ],
+    "story": "",
+    "raw_response": "{\n  \"subtasks\": [\n    {\n      \"start_frame\": 0,\n      \"end_frame\": 95,\n      \"action\": \"grasp\",\n      \"hand\": \"right\",\n      \"object\": \"clear plastic bag containing small green items\",\n      \"subtask\": \"Right hand grasps the clear plastic bag containing small green items from the box.\",\n      \"confidence\": \"high\",\n      \"ongoing\": true\n    }\n  ]\n}",
+    "kept": [
+      {
+        "start_frame": 0,
+        "end_frame": 95,
+        "action": "grasp",
+        "hand": "right",
+        "object": "clear plastic bag containing small green items",
+        "subtask": "Right hand grasps the clear plastic bag containing small green items from the box.",
+        "confidence": "high",
+        "ongoing": true
+      }
+    ],
+    "open_tail_after": {
+      "start_frame": 0,
+      "end_frame": 95,
+      "action": "grasp",
+      "hand": "right",
+      "object": "clear plastic bag containing small green items",
+      "subtask": "Right hand grasps the clear plastic bag containing small green items from the box.",
+      "confidence": "high",
+      "ongoing": true
+    }
+  },
+  {
+    "chunk": 2,
+    "span": [
+      96,
+      143
+    ],
+    "story": "",
+    "raw_response": "{\n  \"subtasks\": [\n    {\n      \"start_frame\": 0,\n      \"end_frame\": 122,\n      \"action\": \"grasp\",\n      \"hand\": \"right\",\n      \"object\": \"clear plastic bag containing small green items\",\n      \"subtask\": \"Right hand grasps the clear plastic bag containing small green items from the box.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 122,\n      \"end_frame\": 143,\n      \"action\": \"retract\",\n      \"hand\": \"right\",\n      \"object\": \"clear plastic bag containing small green items\",\n      \"subtask\": \"Right hand retracts the clear plastic bag containing small green items from the box.\",\n      \"confidence\": \"high\",\n      \"ongoing\": true\n    }\n  ]\n}",
+    "kept": [
+      {
+        "start_frame": 0,
+        "end_frame": 122,
+        "action": "grasp",
+        "hand": "right",
+        "object": "clear plastic bag containing small green items",
+        "subtask": "Right hand grasps the clear plastic bag containing small green items from the box.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 122,
+        "end_frame": 143,
+        "action": "retract",
+        "hand": "right",
+        "object": "clear plastic bag containing small green items",
+        "subtask": "Right hand retracts the clear plastic bag containing small green items from the box.",
+        "confidence": "high",
+        "ongoing": true
+      }
+    ],
+    "open_tail_after": {
+      "start_frame": 122,
+      "end_frame": 143,
+      "action": "retract",
+      "hand": "right",
+      "object": "clear plastic bag containing small green items",
+      "subtask": "Right hand retracts the clear plastic bag containing small green items from the box.",
+      "confidence": "high",
+      "ongoing": true
+    }
+  },
+  {
+    "chunk": 3,
+    "span": [
+      144,
+      191
+    ],
+    "story": "  frames 0-122: grasp \u2014 Right hand grasps the clear plastic bag containing small green items from the box.",
+    "raw_response": "{\n  \"subtasks\": [\n    {\n      \"start_frame\": 122,\n      \"end_frame\": 161,\n      \"action\": \"retract\",\n      \"hand\": \"right\",\n      \"object\": \"clear plastic bag containing small green items\",\n      \"subtask\": \"Right hand retracts the clear plastic bag containing small green items from the box.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 165,\n      \"end_frame\": 191,\n      \"action\": \"reposition\",\n      \"hand\": \"both\",\n      \"object\": \"cardboard box lid\",\n      \"subtask\": \"Both hands reposition the cardboard box lid on top of the box.\",\n      \"confidence\": \"high\",\n      \"ongoing\": true\n    }\n  ]\n}",
+    "kept": [
+      {
+        "start_frame": 122,
+        "end_frame": 161,
+        "action": "retract",
+        "hand": "right",
+        "object": "clear plastic bag containing small green items",
+        "subtask": "Right hand retracts the clear plastic bag containing small green items from the box.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 165,
+        "end_frame": 191,
+        "action": "reposition",
+        "hand": "both",
+        "object": "cardboard box lid",
+        "subtask": "Both hands reposition the cardboard box lid on top of the box.",
+        "confidence": "high",
+        "ongoing": true
+      }
+    ],
+    "open_tail_after": {
+      "start_frame": 165,
+      "end_frame": 191,
+      "action": "reposition",
+      "hand": "both",
+      "object": "cardboard box lid",
+      "subtask": "Both hands reposition the cardboard box lid on top of the box.",
+      "confidence": "high",
+      "ongoing": true
+    }
+  },
+  {
+    "chunk": 4,
+    "span": [
+      192,
+      239
+    ],
+    "story": "  frames 0-122: grasp \u2014 Right hand grasps the clear plastic bag containing small green items from the box.\n  frames 122-161: retract \u2014 Right hand retracts the clear plastic bag containing small green items from the box.",
+    "raw_response": "{\n  \"subtasks\": [\n    {\n      \"start_frame\": 165,\n      \"end_frame\": 239,\n      \"action\": \"reposition\",\n      \"hand\": \"both\",\n      \"object\": \"cardboard box lid\",\n      \"subtask\": \"Both hands reposition the cardboard box lid on top of the box.\",\n      \"confidence\": \"high\",\n      \"ongoing\": true\n    }\n  ]\n}",
+    "kept": [
+      {
+        "start_frame": 165,
+        "end_frame": 239,
+        "action": "reposition",
+        "hand": "both",
+        "object": "cardboard box lid",
+        "subtask": "Both hands reposition the cardboard box lid on top of the box.",
+        "confidence": "high",
+        "ongoing": true
+      }
+    ],
+    "open_tail_after": {
+      "start_frame": 165,
+      "end_frame": 239,
+      "action": "reposition",
+      "hand": "both",
+      "object": "cardboard box lid",
+      "subtask": "Both hands reposition the cardboard box lid on top of the box.",
+      "confidence": "high",
+      "ongoing": true
+    }
+  }
+]

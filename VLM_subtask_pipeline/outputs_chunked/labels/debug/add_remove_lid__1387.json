@@ -1,0 +1,124 @@
+[
+  {
+    "chunk": 0,
+    "span": [
+      0,
+      47
+    ],
+    "story": "",
+    "raw_response": "{\n  \"subtasks\": [\n    {\n      \"start_frame\": 0,\n      \"end_frame\": 9,\n      \"action\": \"reach\",\n      \"hand\": \"left\",\n      \"object\": \"the leftmost cup\",\n      \"subtask\": \"Left hand reaches toward the leftmost cup on the table.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 13,\n      \"end_frame\": 21,\n      \"action\": \"retract\",\n      \"hand\": \"left\",\n      \"object\": \"the leftmost cup\",\n      \"subtask\": \"Left hand retracts from the leftmost cup after hovering near it.\",\n      \"confidence\": \"high\",\n      \"ongoing\": false\n    },\n    {\n      \"start_frame\": 26,\n      \"end_frame\": 47,\n      \"action\": \"reach\",\n      \"hand\": \"left\",\n      \"object\": \"the leftmost cup\",\n      \"subtask\": \"Left hand reaches again toward the leftmost cup on the table.\",\n      \"confidence\": \"high\",\n      \"ongoing\": true\n    }\n  ]\n}",
+    "kept": [
+      {
+        "start_frame": 0,
+        "end_frame": 9,
+        "action": "reach",
+        "hand": "left",
+        "object": "the leftmost cup",
+        "subtask": "Left hand reaches toward the leftmost cup on the table.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 13,
+        "end_frame": 21,
+        "action": "retract",
+        "hand": "left",
+        "object": "the leftmost cup",
+        "subtask": "Left hand retracts from the leftmost cup after hovering near it.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 26,
+        "end_frame": 47,
+        "action": "reach",
+        "hand": "left",
+        "object": "the leftmost cup",
+        "subtask": "Left hand reaches again toward the leftmost cup on the table.",
+        "confidence": "high",
+        "ongoing": true
+      }
+    ],
+    "open_tail_after": {
+      "start_frame": 26,
+      "end_frame": 47,
+      "action": "reach",
+      "hand": "left",
+      "object": "the leftmost cup",
+      "subtask": "Left hand reaches again toward the leftmost cup on the table.",
+      "confidence": "high",
+      "ongoing": true
+    }
+  },
+  {
+    "chunk": 1,
+    "span": [
+      48,
+      95
+    ],
+    "story": "  frames 0-9: reach \u2014 Left hand reaches toward the leftmost cup on the table.\n  frames 13-21: retract \u2014 Left hand retracts from the leftmost cup after hovering near it.",
+    "raw_response": "{\n  \"subtasks\": [\n    {\n      \"start_frame\": 26,\n      \"end_frame\": 52,\n      \"action\": \"reach\",\n      \"hand\": \"left\",\n      \"object\": \"the leftmost cup\",\n      \"subtask\": \"Left hand reaches toward the leftmost cup on the table.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 52,\n      \"end_frame\": 57,\n      \"action\": \"grasp\",\n      \"hand\": \"left\",\n      \"object\": \"the leftmost cup\",\n      \"subtask\": \"Left hand grasps the leftmost cup on the table.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 57,\n      \"end_frame\": 61,\n      \"action\": \"lift\",\n      \"hand\": \"left\",\n      \"object\": \"the leftmost cup\",\n      \"subtask\": \"Left hand lifts the leftmost cup from the table.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 61,\n      \"end_frame\": 65,\n      \"action\": \"grasp\",\n      \"hand\": \"right\",\n      \"object\": \"a white lid\",\n      \"subtask\": \"Right hand grasps a white lid from the table.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": false\n    },\n    {\n      \"start_frame\": 65,\n      \"end_frame\": 95,\n      \"action\": \"align\",\n      \"hand\": \"both\",\n      \"object\": \"the lid and the leftmost cup\",\n      \"subtask\": \"Both hands align the white lid with the leftmost cup.\",\n      \"confidence\": \"high\"\n    ,\n    \"ongoing\": true\n    }\n  ]\n}",
+    "kept": [
+      {
+        "start_frame": 26,
+        "end_frame": 52,
+        "action": "reach",
+        "hand": "left",
+        "object": "the leftmost cup",
+        "subtask": "Left hand reaches toward the leftmost cup on the table.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 52,
+        "end_frame": 57,
+        "action": "grasp",
+        "hand": "left",
+        "object": "the leftmost cup",
+        "subtask": "Left hand grasps the leftmost cup on the table.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 57,
+        "end_frame": 61,
+        "action": "lift",
+        "hand": "left",
+        "object": "the leftmost cup",
+        "subtask": "Left hand lifts the leftmost cup from the table.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 61,
+        "end_frame": 65,
+        "action": "grasp",
+        "hand": "right",
+        "object": "a white lid",
+        "subtask": "Right hand grasps a white lid from the table.",
+        "confidence": "high",
+        "ongoing": false
+      },
+      {
+        "start_frame": 65,
+        "end_frame": 95,
+        "action": "align",
+        "hand": "both",
+        "object": "the lid and the leftmost cup",
+        "subtask": "Both hands align the white lid with the leftmost cup.",
+        "confidence": "high",
+        "ongoing": true
+      }
+    ],
+    "open_tail_after": {
+      "start_frame": 65,
+      "end_frame": 95,
+      "action": "align",
+      "hand": "both",
+      "object": "the lid and the leftmost cup",
+      "subtask": "Both hands align the white lid with the leftmost cup.",
+      "confidence": "high",
+      "ongoing": true
+    }
+  }
+]
